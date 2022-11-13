@@ -10,10 +10,12 @@ Usage
 -----
 
 Type 'eatumbs <numbytes>' to reserve <numbytes> bytes of the upper memory area.
-The position of the reserved upper memory block is selected with a "first fit" strategy. When you're done, type 'eatumbs u' to release the memory.
+The position of the reserved upper memory block is selected with a "first fit"
+strategy. When you're done, type 'eatumbs u' to release the memory.
 
 License
 -------
 
-eatUMBS is (c) 2022 Davide Bresolin and is distributable under the terms of the MIT license. See the LICENSE file for more details.
+eatUMBS is (c) 2022 Davide Bresolin and is distributable under the terms of the
+MIT license. See the LICENSE file for more details.
 
