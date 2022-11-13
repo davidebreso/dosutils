@@ -1,0 +1,240 @@
+INT 2D - ALTERNATE MULTIPLEX INTERRUPT SPECIFICATION (AMIS) [v3.5.1]
+	AH = multiplex number
+	AL = function
+	    00h installation check
+		Return: AL = 00h if free
+			AL = FFh if multiplex number in use
+			    CX = binary version number (CH = major, CL = minor)
+			    DX:DI -> signature string (see below) identifying
+				    the program using the multiplex number
+	    01h get entry point
+		Return: AL = 00h if all API calls via INT 2D
+			AL = FFh if entry point supported
+			    DX:BX -> entry point for bypassing interrupt chain
+	    02h uninstall
+	    	DX:BX = return address for successful uninstall (may be
+			ignored by TSR)
+		Return: AL = status
+			    00h not implemented
+			    01h unsuccessful
+			    02h can not uninstall yet, will do so when able
+			    03h safe to remove, but no resident uninstaller
+			    	(TSR still enabled)
+			    	BX = segment of memory block with resident code
+			    04h safe to remove, but no resident uninstaller
+			    	(TSR now disabled)
+			    	BX = segment of memory block with resident code
+			    05h not safe to remove now, try again later
+			    FFh successful
+			return at DX:BX with AX destroyed if successful and
+			  TSR honors specific return address
+	    03h request pop-up
+		Return: AL = status
+			    00h not implemented or TSR is not a pop-up
+			    01h can not pop up at this time, try again later
+			    02h can not pop up yet, will do so when able
+			    03h already popped up
+			    04h unable to pop up, user intervention required
+			    	BX = standard reason code
+				    0000h unknown failure 
+				    0001h interrupt chain passes through memory
+				    	  which must be swapped out to pop up
+				    0002h swap-in failed
+				CX = application's reason code if nonzero
+			    FFh TSR popped up and was exited by user
+				BX = return value
+				    0000h no return value
+				    0001h TSR unloaded
+				    0002h-00FFh reserved
+				    0100h-FFFFh application-dependent
+	    04h determine chained interrupts
+	    	BL = interrupt number (except 2Dh)
+		Return: AL = status
+			    00h not implemented
+			    01h (obsolete) unable to determine
+			    02h (obsolete) interrupt hooked
+			    03h (obsolete) interrupt hooked, address returned
+			    	DX:BX -> TSR's interrupt BL handler
+			    04h list of hooked interrupts returned
+			    	DX:BX -> interrupt hook list (see below)
+			    FFh interrupt not hooked
+		Notes:	since INT 2D is known to be hooked, the resident code
+			  need not test for BL=2Dh (to minimize its size), and
+			  the return value is therefore undefined in that case.
+			BL is ignored if the TSR returns AL=04h; in that case,
+			  the caller needs to scan the return list rather than
+			  making additional calls to this function.  If the
+			  return is not 00h or 04h, then the caller must cycle
+			  through the remaining interrupt numbers it wishes to
+			  check.
+			return values 01h thru 03h are disparaged and will be
+			  removed from the next version of this specification;
+			  they are included for compatibility with version 3.3,
+			  though they were probably never used in any
+			  implementation
+	    05h get hotkeys
+	    	Return: AL = status
+			    00h not implemented
+			    FFh supported
+			    	DX:BX -> hotkey list (see below)
+	    06h-0Fh reserved for future enhancements
+		Return: AL = 00h (not implemented)
+	    other  application-dependent
+Notes:	programs should not use fixed multiplex numbers; rather, a program
+	  should scan all multiplex numbers from 00h to FFh, remembering the
+	  first unused multiplex in case the program is not yet installed.
+	  For multiplex numbers which are in use, the program should compare
+	  the first 16 bytes of the signature string to determine whether it
+	  is already installed on that multiplex number.  If not previously
+	  installed, it should use the first free multiplex number.
+	functions other than 00h are not valid unless a program is installed
+	  on the selected multiplex number
+	to be considered fully compliant with version 3.5 of the specification,
+	  programs must implement at least functions 00h, 02h (no resident
+	  uninstall code required), and 04h (return value 04h).  TSRs that
+	  provide hotkeys with which the user can activate them must also
+	  implement function 05h.  The absolute minimum fully-compliant
+	  implementation has an overhead of 64 bytes (80 bytes with function
+	  05h) plus 22 bytes per hooked interrupt (for the interrupt sharing
+	  protocol header and hook list entry).
+	the signature string and description may be used by memory mappers
+	  to display the installed programs
+	users of this proposal should adhere to the IBM interrupt sharing
+	  protocol (see below), which will permit removal of TSRs in
+	  arbitrary order and interrupt handler reordering.  All TSRs
+	  following this proposal should be removable, though they need not
+	  keep the code for removing themselves resident; it is acceptable
+	  for a separate program to perform the removal.
+	A sample implementation including example TSRs and utility programs
+	  may be found in a separate package distributed as AMISLnnn.ZIP
+	  (AMISL090.ZIP as of this writing).
+	Please let me know if you choose to follow this proposal.  The
+	  signature and a list of the private API calls you use would be
+	  appreciated, as well.
+SeeAlso: INT 2F
+
+Format of signature string:
+Offset	Size	Description
+ 00h  8 BYTEs	blank-padded manufacturer's name (possibly abbreviated)
+ 08h  8 BYTEs	blank-padded product name
+ 10h 64 BYTEs	ASCIZ product description (optional, may be a single 00h)
+Note:	it is not necessary to reserve a full 64 bytes for the description,
+	  just enough to store the actual ASCIZ string
+
+Format of interrupt hook list [array]:
+Offset	Size	Description
+ 00h	BYTE	interrupt number (last entry in array is 2Dh)
+ 01h	WORD	offset within hook list's segment of the interrupt handler
+ 		this will point at the initial short jump of the interrupt
+		sharing protocol header (see below)
+
+Format of hotkey list:
+Offset	Size	Description
+ 00h	BYTE	type of hotkey checking
+ 		bit 0: checks before chaining INT 09
+		bit 1: checks after chaining INT 09
+		bit 2: checks before chaining INT 15/AH=4Fh
+		bit 3: checks after chaining INT 15/AH=4Fh
+		bit 4: checks on INT 16/AH=00h,01h,02h
+		bit 5: checks on INT 16/AH=10h,11h,12h
+		bit 6: checks on INT 16/AH=20h,21h,22h
+		bit 7: reserved (0)
+ 01h	BYTE	number of hotkeys (may be zero if TSR can disable hotkeys)
+ 02h 6N BYTEs	array of hotkey definitions
+ 		(one per hotkey, first should be primary hotkey)
+ 		Offset	Size	Description
+		 00h	BYTE	hotkey scan code (00h/80h if shift states only)
+		 		hotkey triggers on release if bit 7 set
+		 01h	WORD	required shift states (see below)
+		 03h	WORD	disallowed shift states (see below)
+		 05h	BYTE	flags
+		 		bit 0: hotkey chained before processing
+				bit 1: hotkey chained after processing
+				bit 2: others should pass through this hotkey
+					so that it can be monitored
+				bit 3: hotkey will not activate if other keys
+					pressed/released before hotkey press is
+					completed
+				bit 4: this key is remapped into some other key
+				bit 5-7: reserved (0)
+Notes:	except for bit 7, the shift states correspond exactly to the return
+	  values from INT 16/AH=12h.  A set bit in the required states word
+	  indicates that the corresponding shift state must be active when the
+	  hotkey's scan code is received for the hotkey to be recognized; a
+	  clear bit means that the corresponding state may be ignored.	A set
+	  bit in the disallowed shift states word indicates that the
+	  corresponding shift state must be inactive.
+	if bit 2 is set, either control key may be pressed for the hotkey; if
+	  bits 8 and 10 are both set, then both control keys must be pressed.
+	  Similarly for bits 3 and 9/11, as well as 7 and 0/1.
+	for the disallowed-states word, if one of the "either" bits is set,
+	  then both the corresponding left bit and right bit must be set
+	examples:
+		Ctrl-Alt-Del monitoring: 53h 000Ch 0003h 06h
+		Alt-key tap (DESQview):  B8h 0000h 0007h 08h
+		Shf-Shf-N (NOTE.COM):	 31h 0003h 000Ch 00h
+
+Bitmask of shift states:
+ bit 0: right shift pressed
+ bit 1: left shift pressed
+ bit 2: either control key pressed
+ bit 3: either Alt key pressed
+ bit 4: ScrollLock active
+ bit 5: NumLock active
+ bit 6: CapsLock active
+ bit 7: either shift key pressed
+ bit 8: left control key pressed
+ bit 9: left Alt key pressed
+ bit 10: right control key pressed
+ bit 11: right Alt key pressed
+ bit 12: ScrollLock pressed
+ bit 13: NumLock pressed
+ bit 14: CapsLock pressed
+ bit 15: SysRq/SysReq key pressed
+
+Format of interrupt sharing protocol interrupt handler entry point:
+Offset	Size	Description
+ 00h  2 BYTEs	short jump to actual start of interrupt handler, immediately
+		following this data block (EBh 10h)
+ 02h	DWORD	address of next handler in chain
+ 06h	WORD	signature 424Bh
+ 08h	BYTE	EOI flag
+		00h software interrupt or secondary hardware interrupt handler
+		80h primary hardware interrupt handler (will issue EOI)
+ 09h  2 BYTEs	short jump to hardware reset routine
+		must point at a valid FAR procedure (may be just RETF)
+ 0Bh  7 BYTEs	reserved (0)
+
+Signatures known to be in use:
+ 'Byrial J' 'EKLAVO  '  permits keyboard entry of Esperanto accented letters
+ 'CoveSoft' 'Burnout+'  shareware screen saver Burnout Plus
+ 'Crynwr  ' 'SPELLER '  TSR spelling-checker
+ 'CPH1995 ' 'CDTSR   '  resident CD-Audio player
+ 'CSJewell' 'Modula3L'  Curtis Jewell's Modula-3 compiler (non-TSR)
+ 'DAISYCHA' 'INDRIVER'  Advanced Parallel Port (EPP BIOS) daisy chain driver
+			  (vendor name in product description field, if
+			  desired)
+ 'DTown SD' 'DTU     '  DTown Software Development's DTown Utilities
+ 'ECLIPSE ' 'PLUMP   '  Eclipse Software's printer and plotter spooler
+ 'GraySoft' 'GIPC    '  GraySoft's Inter-Process Communications driver
+ 'heathh  ' 'Monitor '
+ 'Helge O '             TSRs by Helge Olav Helgesen
+ 'J. Berry' 'RATSR   '  RemoteAccess Network Manager workstation module
+ 'JWB     ' 'RAMLIGHT'  James Birdsall's on-screen RAMdisk activity indicator
+ 'M Better' 'iHPFS   '  Marcus Better's HPFS filesystem driver for DOS
+ 'Nildram ' 'ST      '  Screen Thief graphics screen grabber
+ 'Pino Nav' 'Keybit  '  Pino Navato's KEYBIT Lite Italian keyboard driver v4+
+ 'R-Ware  ' 'dLite   '  run-time data decompression TSR
+ 'Ralf B  ' 'FASTMOUS'  example TSR included with sample AMIS library code
+ 'Ralf B  ' 'NOLPT n '	example TSR -- turn LPTn into bit-bucket
+ 'Ralf B  ' 'NOTE    '	example TSR -- popup note-taker
+ 'Ralf B  ' 'RBkeyswp'	RBkeyswap v3.0+ -- swap Esc/~ and LCtrl/CapsLock keys
+ 'Ralf B  ' 'SWITCHAR'	example TSR -- add switchar() support removed from DOS5
+ 'Ralf B  ' 'VGABLANK'	example TSR -- VGA-only screen blanker
+ 'Sally IS' 'Mdisk   '  removeable, resizeable RAMdisk
+ 'Sally IS' 'Scr2Tex '  screen dumper with output in (La)Tex format
+ 'Thaco   ' 'NEST    '  Eirik Pedersen's programmer's delimiter matcher
+ 'TifaWARE' 'EATMEM  '  George A. Theall's public domain memory restrictor for
+ 			testing programs (v1.1+)
+	    'RECALL  '	public domain commandline editor and history (v1.2+)
+ 'Todd    ' 'XPTR2   '  PC-to-Transputer interface by Todd Radel

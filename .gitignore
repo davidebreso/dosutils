@@ -1,0 +1,13 @@
+*.obj
+*.o
+*.lst
+*.lib
+*.bak
+*.map
+*.prj
+*.dsk
+*.log
+*.exe
+# Mac OS garbage
+.DS_Store
+

@@ -1,0 +1,510 @@
+
+
+
+
+
+
+                   IBM'S INTERRUPT-SHARING PROTOCOL
+                            by Chris Dunford
+                                 8/6/91
+
+In the PS/2 BIOS Interface Technical Reference, IBM has suggested a
+protocol for the sharing of system interrupts.  Although the protocol
+was intended to allow sharing of hardware interrupts, it is equally
+usable for software interrupts.
+
+One of the features of the interrupt sharing protocol is that it permits
+a resident program to "unhook" itself from an interrupt even if it is
+not the first interrupt handler in the chain of handlers.  The benefit
+of this should be immediately apparent to developers of TSRs.  It is a
+commonplace in TSR manuals to see verbiage along these lines:
+
+    Program X can be unloaded from memory by typing ... at the DOS
+    prompt.  For this to work, however, X must be the last TSR loaded.
+    If other resident software is loaded after X, you cannot unload X.
+
+The interrupt sharing protocol eliminates this restriction.
+
+However, for the protocol to work, it must be followed by the majority
+of TSR writers.  To date, this has not occurred.  Because the protocol
+is easy to implement and inexpensive in terms of memory, I feel that at
+least part of the reason for this must be that the protocol has not been
+widely publicized; most DOS programmers are simply unaware of it.  I am
+offering this document as a modest attempt to let DOS programmers know
+that a solution exists for a longstanding problem.
+
+Let me add as a caveat that I do not have and have not examined the
+primary source for this information--the PS/2 BIOS reference.  Most of
+the information in this paper was gleaned from other sources, augmented
+by my own experiences in writing TSRs.  The most recent writeup as of
+this date (August 6, 1991) was in the 7/91 issue of the Microsoft
+Systems Journal.
+
+This document is not copyrighted.  Its distribution in any form is
+encouraged (please try to avoid making a profit on it).  If you make
+changes, please make sure they are clearly marked so that I get blame
+only for my own errors and credit only where it is due.  Please try to
+get any changes, amplifications, corrections, etc., back to me so that a
+clean copy can be redistributed if necessary.
+
+The perpetrator of this document is:
+
+    Chris Dunford
+    The Cove Software Group
+    PO Box 1072
+    Columbia, MD 21044
+    301/992-9371
+
+    CompuServe: 76703,2002
+    Internet: 76703.2002@compuserve.com
+
+
+THE PROBLEM
+-----------
+The vast majority of terminate-and-stay-resident (TSR) programs need to
+intercept one or more hardware or software interrupts.  Shown below is
+typical code for accomplishing this, assuming that the interrupt to be
+"hooked" is the DOS service interrupt (INT 21h):
+
+     (data)
+        OldInt21    dd ?
+
+     (installation code)
+        ; Save current INT 21h vector
+        mov ax,3521h
+        int 21h
+        mov word ptr OldInt21,bx
+        mov word ptr OldInt21+2,es
+
+        ; Set new INT 21h vector
+        mov dx,offset NewInt21
+        mov ax,2521h
+        int 21h
+        ...
+
+    (interrupt handler)
+    NewInt21:
+        (perform processing as required)
+        jmp OldInt21
+
+The installation code saves the current contents of the INT 21h vector
+in a 32-bit variable called OldInt21, which is known as a "downward
+link" or "downlink" because it provides a link "downward" in the chain
+of interrupt handlers.  The installation then sets the INT 21h vector to
+point to its own interrupt handler at NewInt21.  When an INT 21h call is
+subsequently issued, execution is routed to NewInt21, which performs
+whatever processing it needs to do.  It then executes a far jump to the
+address in OldInt21, allowing previously installed TSRs (and DOS, of
+course) to do their work.  The flow of control looks like this if only
+one TSR is loaded:
+
+                            vector          OldInt21
+    application (int 21h) -----------> TSR ----------> DOS
+
+To unload itself, the TSR simply resets the INT 21h vector to its
+initial contents (i.e., the address in OldInt21).  The TSR's interrupt
+handler is now no longer in the chain, and the TSR can be safely
+unloaded:
+
+                            vector
+    application (int 21h) -----------> DOS
+
+This scheme works fairly well until the situation arises where more than
+one program tries to hook the same vector:
+
+          vector           OldInt21A        OldInt21B
+    app -----------> TSR A ---------> TSR B ---------> DOS
+
+This also works fine--until TSR B wants to unload itself.  B cannot
+follow its normal procedure and replace the INT 21h vector with the
+contents of its OldInt21.  If it did, the interrupt chain would look
+like this:
+
+          vector
+    app -----------> DOS
+
+The problem, obviously, is that TSR A has been unceremoniously removed
+from the interrupt chain; it has been disabled without notice, even
+though it remains in memory.  This is obviously an unsatisfactory--and
+quite possibly dangerous--situation.
+
+Nor can TSR B simply unload itself without fixing INT 21h.  TSR A would
+still have TSR B's address stored in its OldInt21; when it has completed
+its processing of an INT 21h call, it will jump to the address where TSR
+B was at one time--but is no longer--loaded.  The only unpredictable
+aspect of the result is which kind of reboot (hard or soft) will be
+required.
+
+TSR B's only option is to wave its hands and notify the user that it
+cannot be unloaded.  This is satisfying to the programmer ("We told you
+that you can't do this") but not to the user.
+
+The root of the problem is that TSR A has TSR B's address, but not vice
+versa.  If TSR B knew where TSR A was keeping its (B's) address, the
+resolution would be simple:  B could simply copy its downlink into A's
+downlink.
+
+Here is a hypothetical memory map:
+
+                ---------------------
+                    VECTOR TABLE
+    0000:0084   INT21h vector = 1200:0240 --+
+                ----------------------      |
+                                            |
+                ----------------------      |
+                       TSR A                |
+    1200:0240   NewInt21 (int handler) <----+
+                        ...
+    1200:0642   OldInt21 = 1000:0296   ---+
+                ----------------------    |
+                                          |
+                ----------------------    |
+                       TSR B              |
+    1000:0296   NewInt21 (int handler) <--+
+                        ...
+    1000:0415   OldInt21 = 0070:1234   ---+
+                ----------------------    |
+                                          |
+                ----------------------    |
+                        DOS               |
+    0070:1234   INT 21h entry point    <--+
+                        ...
+                ----------------------
+
+The vector table entry for INT 21h points to TSR A's interrupt handler
+at 1200:0240.  TSR A's OldInt21 contains TSR B's interrupt handler
+address (1000:0296); when A has completed its work, it jumps to B at
+that address.  B has DOS's address (0070:1234) in its OldInt21; when it
+has finished, it jumps to DOS's address.
+
+To take itself out of the chain, all B would have to do would be to put
+its downward link (DOS's address, contained in B's OldInt21) into A's
+downward link (which currently contains B's address):
+
+                ---------------------
+                    VECTOR TABLE
+    0000:0084   INT21h vector = 1200:0240 --+
+                ----------------------      |
+                                            |
+                ----------------------      |
+                       TSR A                |
+    1200:0240   NewInt21 (int handler) <----+
+                        ...
+    1200:0642   OldInt21 = 0070:1234   ---+     <=== change made here
+                ----------------------    |
+                                          |
+                ----------------------    |
+                       TSR B              |
+    1000:0296   NewInt21 (int handler)    |
+                        ...               |
+    1000:0415   OldInt21 = 0070:1234      |
+                ----------------------    |
+                                          |
+                ----------------------    |
+                        DOS               |
+    0070:1234   INT 21h entry point    <--+
+                        ...
+                ----------------------
+
+B is now removed from the chain; it could be safely unloaded, and A will
+remain active.  The problem, as mentioned, is that B doesn't know the
+address of A's OldInt21, so it can't make the correction.
+
+
+THE SOLUTION
+------------
+The solution offered by the interrupt sharing protocol is simplicity
+itself: it requires that the downward link pointer be kept at a
+specific offset from the interrupt handler entry point.  The entry
+point for the first handler in a chain can be found in the
+interrupt vector table; in this manner, a chain can be traced from
+first handler to last.
+
+The offset of the downward link from the entry point turns out to be 2.
+Thus, since TSR A's entry point (found in the vector table) is
+1200:0240, his downlink must be located at 1200:0242.  The map would
+look like if both programs followed the protocol:
+
+                ---------------------
+                    VECTOR TABLE
+    0000:0084   INT21h vector = 1200:0240 --+
+                ----------------------      |
+                                            |
+                ----------------------      |
+                       TSR A                |
+    1200:0240   NewInt21 (int handler) <----+
+    1200:0242   OldInt21 = 1000:0296   ---+
+                        ...               |
+                ----------------------    |
+                                          |
+                ----------------------    |
+                       TSR B              |
+    1000:0296   NewInt21 (int handler) <--+
+    1000:0298   OldInt21 = 0070:1234   ---+
+                        ...               |
+                ----------------------    |
+                                          |
+                ----------------------    |
+                        DOS               |
+    0070:1234   INT 21h entry point    <--+
+                        ...
+                ----------------------
+
+The difference between this and the first map shown is that the
+addresses of the downlinks can be determined by any external program:
+they are no longer private to each TSR.
+
+Program B can find A's downlink by simply following the chain (starting
+at the address contained in the INT 21h vector), examining the downward
+links until the link that points to B's interrupt handler is found.
+These links will always be located at the handler entry point + 2. When
+B finds a link that points to his handler (at 1000:0296), he has found
+what he needs.
+
+The remainder of this document fills in the necessary details for
+implentation of the protocol.
+
+
+THE ENTRY STRUCTURE
+-------------------
+The protocol requires that you use a small (18-byte) block of mixed
+code and data at your interrupt handler's entry point.  When you take
+over an interrupt, you save the current vector in a specific location
+within this block and then set the vector to point to the start of the
+block.  The first item in the block is a short jump to your interrupt
+handler.
+
+The block looks like this:
+
+    intercept:  jmp short int_handler
+    prevhndlr   dd 0
+    signature   dw 424Bh
+    flag        db 0
+                jmp short hwreset
+                db 7 dup (0)            ; Reserved
+    int_handler:
+                ; your interrupt handler starts here...
+
+'intercept' is the address you'll use when you do a SETVEC to intercept
+the interrupt vector, i.e., the entry point for your interrupt handler.
+
+'prevhndlr' is set to contain the initial contents of the interrupt
+vector at the time you take over.  (This is what we were calling
+OldInt21 in the previous sections.)
+
+'signature' must contain 424Bh ("KB") and is used to help identify one
+of these blocks.
+
+'flag' is important only if you're taking over a hardware interrupt
+that requires an EOI (say, INT 8 or INT 9).  For software interrupts
+(INT 16 or INT 21, e.g.), leave it 0. For hardware interrupts, the
+first installed handler should set the flag to 80h.  Only the handler
+whose flag is 80h is allowed to issue EOI.
+
+The 'jmp short hwreset' is pretty much irrelevant to anything software
+people will use; it's primarily for hardware manufacturers (allows
+them to specify code to be executed to reinitialize the hardware on a
+system reset).  However, you must be prepared for the eventuality that
+this entry point will be called by someone; do this by simply defining
+an HWRESET label with a RETF:
+
+    hwreset:    retf
+
+Finally, leave the seven reserved bytes as zeroes.
+
+
+INSTALLING INTO THE CHAIN
+-------------------------
+To install into the interrupt chain, simply (a) save the address of
+the current interrupt handler in PREVHNDLR, and (b) set the interrupt
+vector to point to INTERCEPT.  Your handler is now first in the chain.
+This is no different from what you're probably doing now.  (NOTE:  the
+code shown here assumes that CS contains the segment of the interrupt
+handler.)
+
+        ; Save current vector
+        mov al,interrupt number
+        mov ah,35h
+        int 21h                     ; Current vector in ES:BX
+        mov word ptr cs:prevhndlr,bx
+        mov word ptr cs:prevhndlr+2,es
+
+        ; Set new vector
+        mov ax,cs
+        mov ds,ax
+        mov dx,offset intercept     ; DS:DX -> new intercept
+        mov ah,25H
+        mov al,interrupt number
+        int 21h
+
+
+INTERRUPT HANDLER
+-----------------
+Your interrupt handler, which begins at the label INT_HANDLER, performs
+its duties as required.  When you are done processing, check the
+contents of PREVHNDLR; if it is nonzero (the usual case), chain to the
+previous handler by executing a long jump to the address contained in
+PREVHNDLR.  Otherwise, just IRET.  Sample code:
+
+    int_handler:
+        (do your thing, preserving regs as necessary)
+        push ax             ; Is PREVHNDLR 0:0?
+        mov ax,word ptr cs:prevhndlr
+        or ax,word ptr cs:prevhndlr+2
+        pop ax
+        jz all_done         ; Yes, PREVHNDLR is 0:0, do IRET
+        jmp cs:prevhndlr    ; No, chain to next handler
+    all_done:
+        ; if you are a hardware handler with flags=80h, do EOI here
+        iret
+
+    hwreset: retf           ; Don't forget this!
+
+It is strongly recommended that the INT_HANDLER label immediately
+follow the end of the protocol block, even though this is not required
+by the protocol.  Some programs may assume this to be the case and
+look for a specific jump distance at offset 1 of the block when
+attempting to identify whether or not this is a valid block.  In other
+words, they will look for the first item in the block to be a JMP
+SHORT $+18.
+
+It is critical that you chain to the previous handler using the address
+stored in PREVHNDLR.  Do not store the address elsewhere and use that
+for chaining.  The reason for this is simple:  as discussed in the
+introductory sections, one of the main features of the protocol is that
+other programs are allowed to find and mess with the contents of your
+PREVHNDLR.  In particular, the handler whose address is in your
+PREVHNDLR may take himself out of the chain by replacing what's in your
+PREVHNDLR with what's in his PREVHNDLR.
+
+To recap the introductory sections, suppose you are program C and the
+chain currently looks like this:
+
+    vector -> C -> B -> A
+
+You have program B's address in your PREVHNDLR.  B has program A's
+address in his PREVHNDLR.  B can remove himself from the chain by
+putting A's address in *YOUR* PREVHNDLR:
+
+    vector -> C -> A
+
+This will not work if you store B's address somewhere else--B must
+know where his address is stored in YOUR code.  There's an example of
+this in DISCONNECTING, below.
+
+
+WALKING THE CHAIN
+-----------------
+To "walk" an interrupt handler chain, get the current vector:
+
+        mov al,interrupt number
+        mov ah,35h
+        int 21h                 ; ES:BX has current
+
+Check to see whether ES:BX points to a valid entry structure.  Look
+for:
+
+        byte ptr ES:[BX]   = 0EBh (jmp short)
+        word ptr ES:[BX+6] = 424Bh (signature)
+        byte ptr ES:[BX+9] = 0EBh (another jmp short)
+
+If all of these match, odds are real good that this is a valid
+structure implementing the protocol:  there is a protocol-aware
+interrupt handler at ES:BX.  The address of the previous handler is at
+ES:[BX+2], so you can find the previous one via
+
+        les bx,es:[bx+2]
+
+You can continue in this fashion until either (a) ES:BX is zero, or
+(b) ES:BX doesn't point to a valid structure (meaning someone isn't
+cooperating or you've reached a pointer into DOS or BIOS).  See the
+next section for a more complete code example.
+
+
+DISCONNECTING FROM THE CHAIN
+----------------------------
+To remove yourself from the chain, simply walk the chain as above
+until either (a) ES:BX points to your own structure, (b) ES:BX points
+to a structure whose PREVHNDLR field points to your structure, or (c)
+ES:BX does not point to a valid structure.
+
+In case (a), you are the last handler registered, and you can simply
+reset the interrupt vector to point to the previous handler (the one
+whose address is in your PREVHNDLR field).
+
+In case (b), someone has registered after you, but you can take
+yourself out of the chain by replacing his PREVHNDLR with what you
+have stored in your own.
+
+In case (c), you cannot safely unload.  A non-protocol handler has
+broken the chain.
+
+Coding this is not difficult at all, nor does it use much memory.  An
+example follows (with some pseudocode to save space).  Assume the
+existence of a check_valid_structure subroutine that returns carry set
+if ES:BX does not point to a valid protocol structure:
+
+    ; Get address of first handler (last loaded)
+    mov al,interrupt number
+    mov ah,35h
+    int 21h                         ; First handler at ES:BX
+
+    ; Are we the first handler (case A)?
+    if (es = seg INTERCEPT) and (bx = offset INTERCEPT) then
+        ; Yes, we are the first handler, just reset the
+        ; vector to point to the previous handler
+        lds dx,cs:prevhndlr         ; DS:DX -> previous handler
+        mov al,(interrupt number)
+        mov ah,25h
+        int 21h
+        jmp unload                  ; Now safe to unload
+    end
+
+    ; No, walk the chain until case B or C occurs
+  L1:
+    call check_valid_structure      ; ES:BX -> protocol structure?
+    jc chain_busted                 ; No, chain is broken (case C)
+    lds dx,dword ptr es:[bx+2]      ; DS:DX = his PREVHNDLR
+    if (ds = seg INTERCEPT) and (dx = offset INTERCEPT) then
+        ; He points to us (case B).  Set his PREVHNDLR
+        ; to contents of our PREVHNDLR.  This takes us
+        ; out of the interrupt service chain.
+        lds dx,cs:prevhndlr         ; DS:DX -> handler before us
+        mov es:[bx+2],dx            ; Beam us up...
+        mov es:[bx+4],ds
+        jmp unload                  ; Now safe to unload
+    end
+
+    ; ES:BX handler does not point to us, work backward
+    les bx,es:[bx+2]
+    jmp L1
+
+  chain_busted:
+    ; If we get here, we cannot unload safely
+    ; Notify user and exit
+
+  unload:
+    ; Here it is safe to unload
+
+As you can see, the code is reasonably short and sweet.  It would be
+sensible to implement much of this as subroutines, especially for
+those TSRs that intercept more than one interrupt.  In general, you
+should check all of the vectors you intercept for "disconnectability"
+before disconnecting any of them.  This implies the existence of a
+"chain walking" subroutine and a disconnecting subroutine, both of
+these being generalized versions of the code shown above.
+
+
+FINAL COMMENTS
+--------------
+Note that the protocol allows you to install yourself as other than the
+first interrupt handler, and even to re-order a chain.  If for any
+reason you don't want to be first, walk the chain and insert yourself
+wherever you want by copying someone else's PREVHNDLR into your own,
+then putting your address into his.  You are now inserted into the chain
+just after him.
+
+The code samples given above are generic and are not copied from
+working code from my own software.  There may be errors.
+
+Chris Dunford 8/6/91
