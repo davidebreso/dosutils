@@ -1,0 +1,155 @@
+Alternate Multiplex Interrupt Specification Sample Programs
+Public Domain 1992,1995 Ralf Brown
+Version 0.92
+LastEdit: 9/24/95
+
+------------------------------------------------------------------------
+
+AMITSRS
+	list currently-installed TSRs using the alternate multiplex interrupt
+
+Usage:	AMITSRS
+		list manufacturer, name, and description of each TSR
+
+	AMITSRS <anything>
+		verbose listing; adds a second line with TSR version
+		and private entry point (if any), a third line
+		detailing the number of hotkeys and how checked, and
+		additional lines listing the hotkeys (if any).
+
+------------------------------------------------------------------------
+
+FASTMOUS
+	convert slow (on some systems) mouse hardware reset call into
+	mouse software reset call.
+
+Usage:	FASTMOUS
+		install FASTMOUS
+
+	FASTMOUS R
+		remove FASTMOUS from memory
+
+Resident Size: 128 bytes
+
+------------------------------------------------------------------------
+
+NOLPT
+	turn a parallel port into a bit bucket by making it appear to
+	always be ready for output and ignoring any output calls.
+
+Usage:	NOLPT n
+		install NOLPT on LPTn
+
+	NOLPT nU
+		remove (uninstall) NOLPT from LPTn
+
+Resident Size: 192/240 bytes (high/low)
+
+------------------------------------------------------------------------
+
+NOTE
+	popup one-line note taker
+
+Usage:	NOTE -Ifile
+		install NOTE, using <file> as the notepad
+
+	NOTE -R
+		remove NOTE from memory
+
+Note:	NOTE keeps the notepad file open as long as it remains
+	resident, in order to reduce the size of the resident code and
+	data.  The file is open in write-only deny-none mode, which
+	allows other programs using the correct sharing modes (such as
+	LIST.COM and 4DOS) to access the notepad.  Unfortunately,
+	COMMAND.COM does *NOT* use any sharing modes, even in version
+	6.22--three major releases after sharing modes were introduced!
+	Thus you will get a sharing violation if you attempt to TYPE
+	or COPY the notepad using COMMAND.COM while NOTE is loaded.
+
+Resident Size: 2160/2224 bytes (high/low with generic hotkey handler)
+	       2080/2144 bytes (high/low with custom hotkey handler)
+
+------------------------------------------------------------------------
+
+POPUP
+	request that a specified TSR pop itself up if it supports that
+	operation
+
+Usage:	POPUP <tsrname>
+
+	POPUP <manufacturer> <tsrname>
+
+Note:	both <manufacturer> and <tsrname> may be abbreviated; if more
+	than one TSR matches, the matching TSRs will be listed.
+
+------------------------------------------------------------------------
+
+RBKEYSWP
+	swap Esc and tilde/backquote keys as well as LeftControl and
+	CapsLock keys
+
+Usage:	RBKEYSWP I
+		install in memory
+
+	RBKEYSWP R
+		remove from memory
+
+------------------------------------------------------------------------
+
+REMOVE
+	remove one or more TSRs from memory
+
+Usage:	REMOVE *
+
+	REMOVE <tsrname>
+
+	REMOVE <manufacturer> <tsrname>
+
+Note:	both <manufacturer> and <tsrname> may be abbreviated; if more
+	than one TSR matches, you will be prompted whether to remove
+	all matching TSRs.  REMOVE * removes all AMIS-compliant TSRs.
+
+------------------------------------------------------------------------
+
+SWITCHAR
+	provide switch-character support which was removed from MSDOS 5.0
+
+Usage:	SWITCHAR I
+		install
+
+	SWITCHAR R
+		remove from memory
+
+	SWITCHAR D
+		disable switchar calls
+
+	SWITCHAR E
+		enable switchar calls
+
+	SWITCHAR <x>
+		set switch character to <x>
+
+Resident Size: 224/288 bytes (high/low)
+
+------------------------------------------------------------------------
+
+VGABLANK
+	VGA-specific screen blanker
+
+Usage:	VGABLANK n
+		install, setting blanking interval to <n> minutes
+		or if already installed, change blanking time
+
+	VGABLANK R
+		remove from memory
+
+Resident Size: 208 bytes
+
+------------------------------------------------------------------------
+
+	Ralf Brown			[valid until at least May 1, 1996]
+	813 Copeland Way, Suite 26
+	Pittsburgh, PA 15232
+
+	Ralf Brown 1:129/26.1
+	ralf@pobox.com (currently forwards to ralf@telerama.lm.com)

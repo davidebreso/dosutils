@@ -1,0 +1,394 @@
+Alternate Multiplex Interrupt Specification Library
+Public Domain 1992,1995 Ralf Brown
+Version 0.92
+LastEdit: 9/24/95
+
+Files in this library:
+	AMISLIB.DOC	this file
+	TSRS.DOC	usage instructions for sample TSRs and utilities
+	AMIS.MAC	include file defining various macros
+	AMIS.ASM	the actual library code
+	AMISHOTK.ASM	the library's hotkey collision detection code
+	AMIS.H		C include file defining various things
+	AMITSRS.C	sample program to list resident programs using AMIS
+	FINDTSRS.C	function to find all TSRs matching a given name
+	POPUP.C		sample program to request popup of an AMIS TSR
+	REMOVE.C	sample program to remove a specific AMIS TSR
+	UNINSTAL.ASM	TSR remover for REMOVE.C
+	FASTMOUS.ASM	sample TSR
+	NOLPT.ASM	sample TSR -- turn parallel port into bit bucket
+	SWITCHAR.ASM	sample TSR -- provide switchar() for MSDOS 5.0
+	VGABLANK.ASM	sample TSR -- VGA screen blanker
+	NOTE.ASM	sample TSR -- popup note-taker
+	MAKEFILE	make all programs from the library sources
+
+------------------------------------------------------------------------
+
+Advantages of AMISLIB:
+
+	totally free
+	adds only 1K to the executable -- TSRs can be as small as 1.4K
+	  on disk and use little as 128 bytes in memory (hotkey
+	  checking adds another 300 bytes of transient code)
+	up to 256 AMIS-compliant TSRs can be resident simultaneously
+	  with no interrupt conflicts
+	resultant TSR can load itself into high memory (either MSDOS 5
+	  upper memory blocks or XMS upper memory blocks); the user has
+	  control over where TSR is allowed to load: high only, low only,
+	  or high first then low; high memory may use either the first or
+	  the best UMB; low memory may use either the low end or the high
+	  end of conventional memory.
+	TSRs using AMISLIB or other AMIS-compliant code can detect
+	  hotkey conflicts and either abort before installation or
+	  attempt to use alternate hotkeys
+	TSRs using AMISLIB or other AMIS-compliant code can be unloaded
+	  in any order, and can be unloaded by programs other than the
+	  TSR's original executable
+
+Note: This is still a preliminary version of the library, so there might
+      be problems.  Please let me know if you find any....
+
+------------------------------------------------------------------------
+
+To make use of this library, you basically need to do four things:
+
+	1. To each source file that will make calls, add
+		INCLUDE AMIS.MAC
+	2. In the source file containing the program's entry point, add
+		@Startup M,NN,SSS
+	   just after the above INCLUDE and
+		@Startup2 <Y>
+	   at the program's entry point (see below for details).
+	3. Change the END line of the main source file to
+		END INIT
+	4. Link in AMIS.OBJ (assembled from AMIS.ASM) with the rest of
+	   your object modules.	 If you are using hotkeys, also link in
+	   AMISHOTK.OBJ.
+
+Limitations:
+	The ALTMPX and INSTALL_TSR macros must be invoked from the same
+	  source file in order for the installer to properly fix up the
+	  resident AMIS handler.  (If not, you will have to perform the
+	  fixup yourself in an 'init' handler for INSTALL_TSR)
+	AMISLIB currently limits the resident code/data (not counting 
+	  the "extra" allocation at installation time) to 64K.
+
+------------------------------------------------------------------------
+
+After an INCLUDE AMIS.MAC, the following definitions and macros are available:
+
+AMIS_VERSION
+    100 times the version of the specification to which the library
+    conforms (i.e. 123 = version 1.2.3).
+
+AMISLIB_VERSION
+    100 times the version of this library
+
+@Startup
+    Declare all segments and provide some startup code.
+    Usage:	@Startup major,minor,stack
+    Arguments:
+	major	[opt] the minimum major version of DOS required to run
+	minor	[opt] the major minor version of DOS required to run
+	stack	[opt] the number of bytes of stack to provide at startup
+    Note:
+	If either <major> or <minor> is blank, the program will not
+	check the DOS version at startup.  If <stack> is blank, a
+	default stack of 256 bytes will be provided in memory models
+	other than Tiny (there is no stack in Tiny model, so this value
+	will be ignored).
+
+@Startup2
+    Provide additional startup code at the program's actual entry
+    point. 
+    Usage:	@Startup2 psp
+    Arguments:
+	psp	[opt] if non-blank, allocate a public variable named __psp
+    Note:
+	<psp> should be blank if some other module (such as the C
+	runtime library) provides a public variable named __psp.
+
+RESIDENT_CODE
+    The name of the segment to ASSUME or use in overrides when accessing
+    data within the part of the program which will remain resident.
+
+TGROUP
+    Group containing all resident segments in the TSR.	See also
+    TGROUP@ and TSRgroup@.
+
+TGROUP@
+    Symbol to use when loading a segment register to access the TSRs
+    resident portion in the executable.	 In Tiny model, this will load
+    the value of TGROUP from a memory location; in other memory models,
+    it is identical to TGROUP.
+
+TSRcode@
+TSRcodeEnd@
+    Delimit the code which will remain resident; some of the other
+    macros listed below will not function correctly unless within a
+    section of code delimited with TSRcode@ and TSRcodeEnd@.
+
+TSRdata@
+TSRdataEnd@
+    Delimit the initialized data which will remain resident.  Requires the
+    use of TSRgroup@ to function properly.
+
+TSRbss@
+TSRbssEnd@
+    Delimit the uninitialized data which will be placed in the resident
+    portion (but omitted from the disk image of the executable if
+    possible).	Requires the use of TSRgroup@ to function properly.
+
+TSRgroup@
+    Declare TGROUP and force the correct ordering of TSRcode@, TSRdata@,
+    and TSRbss@.
+
+DISPLAY_STRING
+    Output a '$'-terminated string to standard output via DOS.
+    Usage:
+	DISPLAY_STRING string,dataseg
+    Arguments:
+	string	the label of the string to be displayed
+	dataseg [opt] the segment of the string
+    Example:
+	DISPLAY_STRING banner
+	...
+	...
+	banner db "FOOBAR (c) 1992 Harry Q Bovik",13,10,"$"
+
+CHECK_DOS_VER
+    Ensure that the program is running under the proper version of DOS,
+    and terminate with an error message specifying the minimum required
+    version if not.
+    Usage:
+	CHECK_DOS_VER  major,minor
+    Example:
+	CHECK_DOS_VER 2,00
+
+IF_INSTALLED
+    Conditionally branch somewhere if the TSR is already installed.
+    Usage:
+	IF_INSTALLED dest
+    Arguments:
+	dest	 label to branch to if already installed
+    Return:
+	falls through with CF clear if not already installed
+	branches with CF set and AH = multiplex number if installed
+
+IF_HOTKEY_USED
+    Conditionally branch somewhere if one or more of the TSR's hotkeys
+    are already in use.
+    Usage:
+	IF_HOTKEY_USED dest
+    Arguments:
+	dest	 label to branch to if hotkey conflict
+    Return:
+	falls through with CF clear if no hotkey conflict
+	branches with CF set and AX = bitmask of conflict types
+				bit 0: exact key already in use
+				bit 1: superset key already in use
+				bit 2: subset key already in use
+
+INSTALL_TSR
+    Allocate memory for the resident code, copy the resident code to the
+    allocated memory, hook all interrupts used by the TSR, optionally
+    call an initialization function, and terminate back to DOS.
+    Usage:
+	INSTALL_TSR extra,fit,high,init,if_inst,on_err,more_flags
+    Arguments:
+	extra	[opt] number of additional paragraphs needed in resident part
+	fit	[opt] FIRST or BEST (default) -fit allocation
+	high	[opt] HIGHONLY to only use UMBs, LOWONLY to only use
+			conventional memory, TOPMEM to allocate block at high 
+			end of conventional memory if no UMBs, TOPLOW
+			to only use top end of conventional memory
+	init	[opt] function to call after installing TSR but before exiting
+	if_inst [opt] label to branch to if already installed
+	on_err	[opt] label to branch to if unable to install
+	more_flags [opt] label of byte containing additional flags to be ORed
+		   with those automatically set by <fit> and <high>
+    Notes:
+	If 'init' is specified, the indicated function will be called with
+	    AX = segment at which TSR was loaded
+	If 'if_inst' is specified, the indicated function will be jumped at
+	    with
+	    AH = multiplex number
+	    CX = version number
+	The TOPMEM and TOPLOW options are reported to be incompatible with
+	    Windows 3.0, and will most likely cause a crash if the TSR is
+	    installed while shelled out from a program using SPAWNO or
+	    another swapping spawn() replacement.  Then again, anyone who
+	    attempts to install a TSR while shelled out of another program
+	    deserves whatever happens.
+
+UNINSTALL
+    Remove the TSR from memory.
+    Usage:
+	UNINSTALL on_err
+    Arguments:
+	on_err	  [opt] label to branch to if unable to remove from memory
+    Notes:
+	If 'on_err' is omitted, check CF after this macro to determine
+	whether the removal was successful (CF clear if successful, set
+	on error).
+
+ISP_HEADER
+    Set up the Interrupt Sharing Protocol header for an interrupt.
+    Usage:
+	ISP_HEADER intr,reset,eoi
+    Arguments:
+	intr	interrupt number
+	reset	[opt] name of routine to perform hardware reset
+	eoi	[opt] if nonzero, this is the primary handler for a hardware int
+    Exported Labels: (for example "ISP_HEADER 00h,reset_func,0")
+	INT00h_handler (public), ORIG_INT00h (public), HWRESET_00h,
+	EOI_FLAG_00h
+	[in addition, hw_reset_00h would be present for ISP_HEADER 00h,,0]
+    Note:
+	This macro must be used inside a TSRcode@/TSRcodeEnd@ pair.
+    Example:
+	ISP_HEADER 21h
+		cmp	ah,4Bh	; provide our own EXEC replacement
+		je	exec_call
+		jmp	ORIG_INT21h
+	exec_call:
+		...
+
+HOOKED_INTS
+    Declare the interrupts this TSR hooks.
+    Usage:
+	HOOKED_INTS  int1,int2,...,int32
+    Arguments:
+	up to 32 interrupt numbers
+    Exported Labels:
+	$AMIS$HOOKED_INT_LIST (public)
+    Notes:
+	This macro must be used inside a TSRcode@/TSRcodeEnd@ or
+	TSRdata@/TSRdataEnd@ pair.  INT 2Dh need not be listed, as it is
+	automatically added to the end of the list of hooked interrupts.
+    Examples:
+	HOOKED_INTS		; this TSR hooks only INT 2Dh
+	HOOKED_INTS 13h,21h,FFh	; this TSR hooks INTs 13h, 21h, 2Dh, FFh
+
+HOTKEYS
+    Declare the type of hotkey check(s) used by this TSR.
+    Usage:	HOTKEYS type
+    Arguments:
+	type		when the TSR checks for it hotkey(s)
+    Exported Labels:
+	$AMIS$HOTKEY_LIST (public)
+	$AMIS$HOTKEY_LIST_START (internal use)
+    Note:
+	This macro must be followed immediately by one or more HOTKEY
+	macros, followed by the HOTKEYS_DONE macro.
+
+HOTKEY
+    Declare one of the hotkeys used by this TSR.
+    Usage:	HOTKEY	scan,required,disallowed
+    Arguments:
+	scan	    scan code for hotkey
+	required    shift states required for hotkey to be recognized
+	disallowed  shift states which must be inactive for hotkey
+
+HOTKEYS_DONE
+    Indicate that the list of hotkey definitions is complete.
+    Usage:	HOTKEYS_DONE
+    Exported Labels:
+	$AMIS$NUM_HOTKEYS (internal use)
+
+HOTKEY_DISPATCHER
+    Include code for a generic hotkey dispatcher on INT 15/AH=4Fh which
+    interprets the hotkey records created with the HOTKEYS, HOTKEY, and
+    HOTKEYS_DONE macros.
+    Usage:	HOTKEY_DISPATCHER chain,funcs,other
+    Arguments:
+	chain	when should dispatcher chain?  valid: BEFORE or AFTER
+	funcs	name of list of words containing offsets of functions
+	other	[opt] address to jump at if INT 15h invoked with AH != 4Fh
+    Exported Labels:
+	ORIG_INT15h
+    Note:
+	The list of hotkey handlers must be in the same order as the
+	hotkeys defined with multiple instances of the HOTKEY macro.
+
+ALTMPX
+    Define the alternate multiplex interrupt handler for the program.
+    Usage:
+	ALTMPX manuf,prodname,version,descrip,priv,api,popup,remove,psp
+    Arguments:
+	manuf	   one- to eight-character manufacturer's name
+	prodname   one- to eight-character product name
+	version	   four-digit hex version number (hi byte = major, lo = minor)
+	descrip	   [opt] string (max 63 char) describing the product
+	priv	   [opt] name of routine to handle private INT 2Dh functions
+	api	   [opt] name of FAR routine giving non-INT 2Dh API entry point
+	popup	   [opt] name of function to call to request a popup
+	remove	   [opt] name of function to call to remove TSR from memory
+	psp	   [opt] if nonblank, set up patch word for memblk segment to
+			 be returned if <remove> omitted; returns CS if both
+			 <remove> and <psp> blank (in this case, INSTALL_TSR
+			 must specify either TOPMEM or HIGHONLY)
+    Limitations on Routines:
+	<priv>	must be located in TSRcode@
+		input:	AL = function number (10h-FFh)
+			AH = multiplex number (ignore)
+			others available for handler
+		return: via IRET, with regs as appropriate for requested func
+	<api>	must be located in TSRcode@
+		input:	registers as desired (no limitations)
+		return: registers as desired (no limitations)
+	<popup> must be located in TSRcode@
+		input:	nothing
+		return: AL = status
+				01h can not pop up now, try again later
+				02h can not pop up yet, will do so when able
+				03h already popped up
+				04h unable to popup, user intervention required
+				    BX = standard reason code
+					0000h unknown failure
+					0001h int chain passes through memory
+						which must be swapped out
+					0002h swap-in failed
+				    CX = application's reason code if nonzero
+				FFh TSR popped up and was exited by user
+				    BX = return value
+					0000h no return value
+					0001h TSR unloaded
+					0002h-00FFh reserved
+					0100h-FFFFh application-specific
+	<remove> must be located in TSRcode@
+		input:	DX:BX = return address if uninstall successful
+		return: AL = status
+				01h unable to remove from memory
+				02h can't remove now, will do so when able
+				03h safe to remove, but no resident uninstaller
+				    (TSR still enabled)
+					BX = segment of memory block
+				04h safe to remove, but no resident uninstaller
+				    (TSR now disabled)
+					BX = segment of memory block
+				05h not safe to remove now, try again later
+				FFh successful (DX:BX were ignored)
+		return at DX:BX with AX destroyed if successful and <remove>
+			honors specific return address
+		if <remove> omitted, ALTMPX returns AL=03h
+    Exported Labels:
+	INT2Dh_handler (public), ORIG_INT2Dh (public), HWRESET_2Dh,
+	EOI_FLAG_2Dh, hw_reset_2Dh, $AMIS$MULTIPLEX_NUMBER (public),
+	ALTMPX_SIGNATURE (public), ALTMPX$PSP [patch word if <psp> nonblank]
+    Note:
+	This macro must be used inside a TSRcode@/TSRcodeEnd@ pair.
+
+------------------------------------------------------------------------
+
+For more details, see AMIS.MAC, AMIS.ASM, and the source to the example
+TSRs.  See also TSRS.DOC for usage information on the sample TSRs.
+
+------------------------------------------------------------------------
+
+	Ralf Brown			[valid until at least May 1, 1996]
+	813 Copeland Way, Suite 26
+	Pittsburgh, PA 15232
+
+	Ralf Brown 1:129/26.1
+	ralf@pobox.com (currently forwards to ralf@telerama.lm.com)

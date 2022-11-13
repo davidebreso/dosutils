@@ -1,0 +1,15 @@
+This is a preliminary version of a reference implementation of the
+Alternate Multiplex Interrupt Specification (AMIS), version 3.5.
+
+[9/12/92 v0.90]
+new features: hotkey conflict detection, simplifications in macro usage,
+generic hotkey dispatcher
+
+[10/16/92 v0.91]
+fixed: stack errors in AMISHOTK.ASM (check_if_hotkeys_used) and
+	UNINSTAL.ASM (unhook_interrupts)
+
+[2/93 v0.92; released 9/24/95]
+fixed: a few more bugs
+changed: TSRs calling DOS no longer need to hook INT 25h or INT 26h
+

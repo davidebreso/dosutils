@@ -1,0 +1,40 @@
+
+
+                        ---------------------
+                        TifaWARE EATMEM, v1.1
+                        ---------------------
+
+
+
+    The following files make up version 1.1 of EATMEM, a simple public-
+domain utility to limit memory availability. You do not need a PC-
+compatible machine to use this program. Enjoy!
+
+
+     -----------------------------------------------------------------
+     Makefile       - makefile used in creating the program.
+
+     Eatmem.Asm     - source code for the program.
+
+     Eatmem.Com     - compiled version of the program.
+
+     Eatmem.Doc     - documentation for the program.
+
+     Eatmem.RMe     - this file.
+
+     Intproto.Txt   - text by Chris Dunford describing IBM's Interrupt
+                      Sharing Protocol.
+     -----------------------------------------------------------------
+
+
+
+                         George A. Theall
+
+                             TifaWARE
+                       506 South 41st St., #3M
+                      Philadelphia, PA.  19104
+                              U.S.A.
+
+                         +1 215 662 0558
+
+              theall@gdalsrv.sas.upenn.edu (Internet)

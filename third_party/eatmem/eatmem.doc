@@ -1,0 +1,203 @@
+
+
+                                EATMEM, v1.1
+                                -------------
+                                from TifaWARE
+
+
+
+
+What's New
+----------
+
+
+     New to version 1.1 is support for Ralf Brown's alternate multiplex
+interrupt proposal. Since it specifies a way to handle multiplex ids
+dynamically, I have been able not only to get rid of EATMEM's '-m' option
+but also to test reliably whether EATMEM has been loaded. I've also added
+support for IBM's Interrupt Sharing Protocol, which permits removal of
+TSRs in arbitrary order. [Of course, your other TSRs must support this
+protocol too for it to be of much use.]
+
+     Version 1.0 was the first public release of EATMEM.
+
+
+
+
+Introduction
+------------
+
+
+     EATMEM is a simple utility to limit memory availability. In this day
+of multi-megabyte memory configurations, why would anyone want to do this?
+Well, the prime reason is to discover the minimum memory requirements of
+programs, whether they run under DESQview, on an ancient PC with less than
+640K, or on a network.
+
+     I have implemented EATMEM as a TSR, though its sole purpose is to
+take up memory. You specify how many Kbytes of memory to leave; EATMEM
+reserves the rest as it goes resident. Then you put other programs through
+their paces to see how they deal with RAM-cram. When you're done, you can
+uninstall EATMEM to get back where you started from.
+
+
+
+
+Usage
+-----
+
+
+     Running EATMEM is straightforward. Once you've placed the program
+where DOS can find it, type EATMEM -? to display a brief help message
+similar to the following:
+
+     TifaWARE EATMEM, v1.1a, 11/16/91 - TSR utility to limit available memory.
+     Usage: eatmem [-options] Kbytes
+     
+     Options:
+       -r    = remove from memory
+       -?    = display this help message
+     
+     Kbytes is the amount of conventional memory to reserve.
+
+[If you don't remember anything else, at least remember how to display
+this help message.]
+
+     Generally you'll invoke EATMEM by specifying the number of Kbytes to
+leave free. EATMEM will reserve the rest and return you to the DOS prompt.
+For instance, EATMEM 64 would leave you with only 64K of conventional
+memory free. Since EATMEM does not do any work in the background, you
+shouldn't experience any compatibility problems with it.
+
+     A few words of caution though, about how much memory can be reserved.
+On one hand, EATMEM needs some memory to install itself, under 1K. On the
+other, DOS itself needs some memory to reload its transient portion after
+EATMEM has gone resident; the amount varies from one version of DOS to
+another but is around 20K - 30K. If you try to reserve too much memory,
+then you'll see the error message "Memory allocation error. Cannot load
+MS-DOS, system halted." and your machine will crash. Caveat user!
+
+     Like any good memory-resident program, EATMEM can be removed from
+memory. Just specify the '-r' option. EATMEM will sense whether it's safe
+to unhook itself and abort if not. EATMEM should only balk if some other
+TSR you have loaded doesn't follow IBM's Interrupt Sharing Protocol.
+
+
+
+
+If You Have Any Trouble
+-----------------------
+
+
+     EATMEM will let you know of problems that arise. Here are the
+messages you might see and how you should deal with them:
+
+     eatmem: invalid option -- x.
+          - Type "EATMEM -?" for a list of valid options.
+
+     eatmem: invalid argument.
+          - The argument was not a decimal number or was too
+            large. Respecify.
+
+     eatmem: DOS v1 is not supported.
+          - Sorry, you'll have to upgrade.
+
+     eatmem: unable to go resident.
+          - Either EATMEM found a copy of itself already 
+            active in memory, you have over 255 TSRs loaded,
+            or there's not enough memory to satisfy your 
+            request. Something's gotta go.
+
+     eatmem: unable to remove from memory.
+          - Some other TSR was installed later that does
+            not share interrupts.
+
+     eatmem: not yet installed.
+          - You must install EATMEM before you can try 
+            to uninstall it.
+
+These messages are written to the standard error device. In this way, they
+won't disappear down a pipe or into a file should you redirect EATMEM's
+output.
+
+     Additionally, EATMEM uses a return code to convey information about
+the success or failure of its operation. Possible return values are:
+
+     Code      Meaning
+     ----      -------
+     0         EATMEM was successfully installed or removed
+     1         Help message was displayed
+     5         Incorrect DOS version
+     10        Installation failed
+     20        Removal failed
+     25        EATMEM has not yet been installed
+
+You can test for these codes using the ERRORLEVEL construct in a batch
+file.
+
+
+
+
+Requirements
+------------
+
+
+     TifaWARE EATMEM runs on machines operating under DOS v2.x or better.
+It requires about 1K of memory (plus whatever you tell it to reserve, of
+course :-). It uses standard DOS function calls so it should work even on
+machines that are not PC-compatible. 
+
+
+
+
+Who Owns It?
+------------
+
+
+     I am releasing this program into the public domain. Since 1984 I have
+used public-domain software extensively, and I find it to be a terrific
+idea. Most programs are useful, and the source instructive. And they cost
+nothing! With this small contribution to the public domain I hope to pay
+back my gratitude to those other programmers who have made my computing so
+much easier.
+
+     However, this program carries no obligation on my part to support
+users or provide future upgrades. I try to write clean code and believe it
+is "bug-free". Nevertheless, use this program ***AT YOUR OWN RISK***. Scan
+the source yourself, make any desired changes, and recompile the program,
+if possible. Make this standard practice with newly-acquired software and
+you'll not only protect your system from viruses but also get a better
+feel for exactly how programs work!
+
+     As author of this program, I have two requests: First, please keep
+together the original source code, documentation, and executable if you
+distribute the package. This just makes it easier for others to use the
+software. Second, let me hear what you think of it - I'd appreciate a
+postcard with your comments. Enjoy!
+
+
+
+
+Kudos
+-----
+
+
+     Thanks are due to the authors of _Undocumented DOS_ for arousing my
+curiousity about memory allocation in DOS *and* providing a way to satisfy
+that curiousity. This book is a gold mine of information about DOS. I 
+highly recommend it. 
+
+
+
+
+
+                          George A. Theall
+
+                             TifaWARE
+                       506 South 41st St., #3M
+                      Philadelphia, PA.  19104
+                              U.S.A.
+
+                         +1 215 662 0558
+
+               theall@gdalsrv.sas.upenn.edu (Internet)
