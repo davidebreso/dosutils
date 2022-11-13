@@ -18,7 +18,7 @@
 extern void (interrupt far *far OldInt2D)();
 extern void interrupt far int2d_handler();
 extern void far END_int2d_handler(void);
-extern unsigned short far MPlex;
+extern unsigned char far MPlex;
 
 
 #pragma pack (1)
@@ -65,7 +65,7 @@ unsigned int AllocMemory(unsigned int residentsize, unsigned int strategy)
 
     allocSeg = r.x.ax;
 
-    *(short far*)MK_FP(allocSeg-1, 1) = allocSeg;   /* makes it selfreferencing */
+    *(char far*)MK_FP(allocSeg-1, 1) = allocSeg;   /* makes it selfreferencing */
     _fmemcpy(MK_FP(allocSeg-1, 8), MY_MEMORY_SIGNATURE, 8);   /* mark our name */
 
     r.x.ax = 0x5803;     /* reset UMB link state */
@@ -87,7 +87,7 @@ unsigned int AllocMemory(unsigned int residentsize, unsigned int strategy)
  * 'segment' point to the segment of the installed copy (if any)
  *
  */
-unsigned int CheckIfInstalled(unsigned short *id, unsigned int *segment)
+unsigned int CheckIfInstalled(unsigned char *id, unsigned int *segment)
 {
     unsigned int curr_id, free_id = 0x100;
     void far *signature;
@@ -179,11 +179,11 @@ int main(int argc, char *argv[])
 {
     unsigned int residentSeg, residentsize;
     unsigned int size = 400;
-    int i;
+    int i, status;
 	char *argptr;
     void far *orig2d;
     struct TSR_Header far *prev2d;
-    unsigned short my_id;
+    unsigned char my_id;
     
 	union  REGS r;
 	struct SREGS sregs;
@@ -238,10 +238,14 @@ int main(int argc, char *argv[])
 	}
 
     /* Get first free multiplex ID */
-    if(CheckIfInstalled(&my_id, &residentSeg) != 0)    
+    status = CheckIfInstalled(&my_id, &residentSeg);
+    if(status == 1)    
     {
-        printf("ERROR: eatUMBS is already installed, or no multiplex idx available\n");
+        printf("ERROR: eatUMBS is already installed\n");
         return 1;
+    } else if(status != 0) {
+        printf("ERROR: no multiplex id available\n");
+        return 1;    
     }
     MPlex = my_id;
     residentSeg = AllocMemory(size, 0x40);

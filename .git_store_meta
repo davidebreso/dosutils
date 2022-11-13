@@ -2,8 +2,8 @@
 <file>	<type>	<mtime>
 .gitignore	f	2022-11-13T19:53:03Z
 Makefile	f	2022-11-13T19:50:39Z
-eatumbs.c	f	2022-11-13T18:24:56Z
-eatumbsr.asm	f	2022-11-13T16:12:41Z
+eatumbs.c	f	2022-11-13T21:39:16Z
+eatumbsr.asm	f	2022-11-13T21:33:58Z
 readme.md	f	2022-11-13T20:32:29Z
 third_party/amis/Makefile	f	1995-09-24T07:37:08Z
 third_party/amis/amipopup.asm	f	1993-02-21T19:25:56Z
