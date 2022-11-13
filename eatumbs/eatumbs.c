@@ -126,7 +126,7 @@ unsigned int CheckIfInstalled(unsigned char *id, unsigned int *segment)
 /*
  * Get previous Interrupt handler in the chain
  */
-struct TSR_Header far *GetPrevHandler(unsigned int curr_segment)
+struct TSR_Header far *GetPrevHandler(void far *curr_handler)
 {
     struct TSR_Header far *prev_handler;
 
@@ -136,7 +136,7 @@ struct TSR_Header far *GetPrevHandler(unsigned int curr_segment)
     /* Start from first INT 2D handler */
     prev_handler = (void far *)_dos_getvect(0x2d);
     // printf("First handler at %04x:%04x\n", FP_SEG(prev_handler), FP_OFF(prev_handler));
-    if(FP_SEG(prev_handler) == curr_segment) return NULL;
+    if(prev_handler == curr_handler) return prev_handler;
     
     while(1)
     {
@@ -152,7 +152,7 @@ struct TSR_Header far *GetPrevHandler(unsigned int curr_segment)
         if(prev_handler->Entry == 0xeb && prev_handler->Sig == 0x424b && prev_handler->Reset == 0xeb)
         {
             /* Ok, looks like the ISR is following the Interrupt Sharing Protocol. */
-            if(FP_SEG(prev_handler->OldISR) == curr_segment) {
+            if(prev_handler->OldISR == curr_handler) {
                 /* We have found the previous element, return */
                 return prev_handler;
             }
@@ -181,7 +181,7 @@ int main(int argc, char *argv[])
     unsigned int size = 400;
     int i, status;
 	char *argptr;
-    void far *orig2d;
+    void far *orig2d, far *curr2d;
     struct TSR_Header far *prev2d;
     unsigned char my_id;
     
@@ -201,18 +201,22 @@ int main(int argc, char *argv[])
         if(CheckIfInstalled(&my_id, &residentSeg) == 1)
         {
             orig2d = *(void far *far*)MK_FP(residentSeg,FP_OFF(&OldInt2D));
+            curr2d = MK_FP(residentSeg, FP_OFF(int2d_handler));
             /* Get previous INT 2D handler */
-            prev2d = GetPrevHandler(residentSeg);
-            if(prev2d != NULL) {
-                // printf("Previous INT 2D handler at %04x:%04x\n", FP_SEG(prev2d), FP_OFF(prev2d));
-                prev2d->OldISR = orig2d;
-            } else {
+            prev2d = GetPrevHandler(curr2d);
+            if(prev2d == curr2d) {
                 /* Restore old INT 2D handler */
                 r.x.ax  = 0x252D;              /* dosSetVect */
                 r.x.dx  = FP_OFF(orig2d);
                 sregs.ds   = FP_SEG(orig2d);
                 int86x(0x21,&r,&r,&sregs);
                 // printf("INT 2D handler restored to %04x:%04x\n", FP_SEG(orig2d), FP_OFF(orig2d));
+            } else if(prev2d != NULL) {
+                // printf("Previous INT 2D handler at %04x:%04x\n", FP_SEG(prev2d), FP_OFF(prev2d));
+                prev2d->OldISR = orig2d;
+            } else {
+                printf("ERROR: unable to remove from memory.");
+                return 1;
 		    }
             /* Release memory */
             _dos_freemem(residentSeg);

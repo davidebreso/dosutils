@@ -7,7 +7,8 @@ eatumbs.exe: eatumbs.c eatumbsr.asm
 # Create zipfile for release
 release: eatumbs.exe .SYMBOLIC
 	rm -f eatumbs.zip
-	zip -j eatumbs.zip *.exe *.txt ../LICENSE
+	zip -j eatumbs.zip *.exe 
+	zip -j -l eatumbs.zip *.txt ../LICENSE
 
 # cleanup
 clean
