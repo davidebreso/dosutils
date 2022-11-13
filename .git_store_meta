@@ -2,7 +2,7 @@
 <file>	<type>	<mtime>
 .gitignore	f	2022-11-13T19:53:03Z
 Makefile	f	2022-11-13T19:50:39Z
-eatumbs.c	f	2022-11-13T21:39:16Z
+eatumbs.c	f	2022-11-13T21:43:35Z
 eatumbsr.asm	f	2022-11-13T21:33:58Z
 readme.md	f	2022-11-13T20:32:29Z
 third_party/amis/Makefile	f	1995-09-24T07:37:08Z

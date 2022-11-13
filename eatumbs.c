@@ -11,7 +11,7 @@
 #include <ctype.h>
 
 #define MY_MEMORY_SIGNATURE "eatUMBS "
-#define MY_VERSION_TEXT "v0.1"
+#define MY_VERSION_TEXT "v1.0"
 #define MY_TSR_SIGNATURE "DB      eatUMBS "
 
 /* these things are imported from the resident part */
