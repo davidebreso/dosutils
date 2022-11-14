@@ -2,7 +2,7 @@ all: rtl2umb.exe
 
 # Utility TSR to reserve UMB memory
 rtl2umb.exe: rtl2umb.o
-	wlink system dos file rtl2umb.o
+	wlink system dos file rtl2umb.o option map
 	
 rtl2umb.o: rtl2umb.asm
 	wasm rtl2umb.asm
@@ -19,4 +19,4 @@ clean
 distclean: clean .SYMBOLIC
 	rm -f *.exe
 	rm -f *.zip
-    
+
