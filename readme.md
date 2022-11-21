@@ -1,6 +1,6 @@
 # Dos Utilities
 
-A repo to host small DOS utilities and programs that do not deserve their own repository.
+A place to host small DOS utilities and programs that do not deserve their own repository.
 
 ## License
 
@@ -10,5 +10,5 @@ A repo to host small DOS utilities and programs that do not deserve their own re
 
 - `third_party/eatmem` contains a copy of TifaWARE EATMEM, written by George A. Theall. It is in the public domain.
 
-- `third_party/ucr_stdlib` contains a copy of the UCR Standard Library for 80x86 Assembly Language Programmers. Written By Randall Hyde and others, it is in the public domain. 
+- `third_party/ucr_stdlib` contains a copy of the UCR Standard Library for 80x86 Assembly Language Programmers. Written by Randall Hyde and others, it is in the public domain. 
 
