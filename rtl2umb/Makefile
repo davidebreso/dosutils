@@ -1,22 +1,31 @@
+# Makefile to create RTL2UMB.EXE
+# tools used:
+# - GNU make
+# - JWasm v2.12pre
+
+# Macros for building, deleting ########################################
+
+AS=jwasm
+RM=rm -f
+
+# Targets ##############################################################
+
 all: rtl2umb.exe
 
-# Utility TSR to reserve UMB memory
-rtl2umb.exe: rtl2umb.o
-	wlink system dos file rtl2umb.o option map
+rtl2umb.exe: rtl2umb.asm
+	$(AS) -mz -Fo rtl2umb.exe rtl2umb.asm
 	
-rtl2umb.o: rtl2umb.asm
-	wasm rtl2umb.asm
+# Clean up #############################################################
 
-# cleanup
-clean
-	rm -f *.o
-	rm -f *.lib
-	rm -f *.bak
-	rm -f *.map
-	rm -f *.lst
-	rm -f *.err
+clean:
+	$(RM) *.o
+	$(RM) *.lib
+	$(RM) *.bak
+	$(RM) *.map
+	$(RM) *.lst
+	$(RM) *.err
 	
-distclean: clean .SYMBOLIC
-	rm -f *.exe
-	rm -f *.zip
+distclean: clean
+	$(RM) *.exe
+	$(RM) *.zip
 

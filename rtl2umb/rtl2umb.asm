@@ -17,7 +17,7 @@
 ; Set the size and position of the UMB with RSET8019.EXE
 ;
 ; The code can be assembled and linked with Open Watcom WASM/WLINK
-; or Borland TASM/TLINK
+; or Borland TASM/TLINK, JWASM and possibly other MASM-like assemblers
 ;
 ; To assemble and link with Open Watcom:
 ;       wasm rtl2umb.asm
@@ -26,6 +26,9 @@
 ; To assemble and link with Borland Turbo Assembler and Linker:
 ;       tasm rtl2umb
 ;       tlink rtl2umb 
+;
+; JWASM can produce .EXE files directly and do not need a linker:
+;       jwasm -mz rtl2umb.asm
 ;
 ;========================================== Declarations ====================
 .8086 ; cpu type
