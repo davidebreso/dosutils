@@ -16,12 +16,11 @@ A similar issue affects also the color VGA driver: a patched version of
 the driver has been available thanks to the work of Montecarlo4tony at
 VCFED
 
-https://forum.vcfed.org/index.php?threads/windows-3-0-vga-color-driver-
-for-8088-xt.35866
+https://forum.vcfed.org/index.php?threads/windows-3-0-vga-color-driver-for-8088-xt.35866
 
 The EGA and VGA color drivers share most of the code, and thus the EGA
 driver can be patched in the very same way as Tony did on the VGA
-driver, with only a small difference in the offsets of the changes.
+driver, with only small differences in the offsets of the changes.
 
 # PATCH DETAILS
 
