@@ -11,6 +11,7 @@ ega8086/ega8086.jac	f	2023-08-03T21:53:03Z
 ega8086/readme.md	f	2023-08-03T22:05:13Z
 fixemm/fixemm.asm	f	2023-09-25T17:56:12Z
 fixemm/fixemm.exe	f	2023-09-25T17:58:10Z
+pcs86/fixbios.py	f	2023-09-26T17:48:25Z
 readme.md	f	2023-08-03T22:14:05Z
 rtl2umb/Makefile	f	2022-11-21T19:52:16Z
 rtl2umb/readme.md	f	2022-11-14T00:39:54Z
