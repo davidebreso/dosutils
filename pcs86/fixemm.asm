@@ -37,7 +37,37 @@ main        proc
             mov     ax, @data       ; point DS at the data segment
             mov     ds, ax
             disp_str start_msg
-            mov     ax, 4000h       ; Check for EMM
+            ; Check for EMM using the "open handle" technique
+            mov     ax, 3D00h       ; open handle, read-only
+            mov     dx, offset device_name  ; device/path name
+            int     21h             ; call DOS
+            jc      noemmQuit       ; open error if carry flag is set
+
+            mov     bx, ax          ; save file handle in BX
+            mov     ax, 4400h       ; IOCTL - get device information
+            int     21h             ; call DOS
+            jc      noemmQuit       ; error if carry flag is set
+
+            test    dx, 80h         ; bit 7 of DX is 1 if device, 0 if file
+            jz      noemmQuit       ;
+
+            mov     ax, 4407h       ; IOCTL - get output status
+            ;; file handle is already in BX
+            int     21h             ; call DOS
+            jc      noemmQuit       ; error if carry flag is set
+            push    ax              ; save IOCTL status
+            mov     ah, 3Eh         ; close handle
+            int     21h             ; call DOS
+            pop     ax              ; restore IOCTL status
+            cmp     al, 0FFh        ; check for "device ready" status
+            je      emmOk           ; continue if status = 0FFh
+noemmQuit:
+            disp_str noems_msg
+            mov     al, 1           ; return code 1
+            jmp     exeQuit         ; terminate
+
+emmOk:
+            mov     ax, 4000h       ; Check EMM status
             int     67h
             or      ah, ah
             jnz     errorQuit
@@ -49,8 +79,9 @@ main        proc
             jmp     exeQuit
 
 errorQuit:  disp_str err_msg
+            mov     al, 1       ; Return errcode 1
 
-exeQuit:    mov     ax, 4C00h
+exeQuit:    mov     ah, 4Ch
             int     21h
 main        endp
 
@@ -58,7 +89,9 @@ main        endp
 ;
 .data
 
+device_name db      'EMMXXXX0', 0
 start_msg   db      'FixEMM v.0.1, (c) Davide Bresolin 2023.', 0dh, 0ah, '$'
+noems_msg   db      'No Expanded Memory Manager! Aborting.', 0dh, 0ah, '$'
 err_msg     db      'Error! Aborting.', 0dh, 0ah, '$'
 ok_msg      db      'OS/E functions disabled.', 0dh, 0ah, '$'
 
