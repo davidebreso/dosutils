@@ -49,7 +49,6 @@ parseg          DW      0
 ;--------------------------------------------------------------------
 ;       EMM driver work data area
 ;--------------------------------------------------------------------
-emsio           DW      0E400h          ;EMS i/o port register
 emsio_ofs       DW      400h            ;EMS i/o port address offset
 emm_flag        db      0               ;EMM driver install status
 backup_count    DB      0               ;mapping data backup count
@@ -69,8 +68,22 @@ jump_addr       DW      0               ;EMM function jump address data area
 ;
 ;       physical page status data area
 ;
+map_table_ofs   DW      OFFSET map_table_def
 map_table       LABEL   phys_page_struct
-                DB      SIZE phys_page_struct * PHYS_PAGES DUP (-1)
+;                DB      SIZE phys_page_struct * PHYS_PAGES DUP (-1)
+;       <emm_handle2, phys_page_port, pyhs_seg_addr, log_page_data>
+                phys_page_struct <UNMAP, 0C000h, 0C000h, 0>
+                phys_page_struct <UNMAP, 0C001h, 0C400h, 0>
+                phys_page_struct <UNMAP, 0C002h, 0C800h, 0>
+                phys_page_struct <UNMAP, 0C003h, 0CC00h, 0>
+                phys_page_struct <UNMAP, 0D000h, 0D000h, 0>
+                phys_page_struct <UNMAP, 0D001h, 0D400h, 0>
+                phys_page_struct <UNMAP, 0D002h, 0D800h, 0>
+                phys_page_struct <UNMAP, 0D003h, 0DC00h, 0>
+map_table_def   phys_page_struct <UNMAP, 0E000h, 0E000h, 0>
+                phys_page_struct <UNMAP, 0E001h, 0E400h, 0>
+                phys_page_struct <UNMAP, 0E002h, 0E800h, 0>
+                phys_page_struct <UNMAP, 0E003h, 0EC00h, 0>
 ;
 ;       handle status flag buffer pointers (handle)
 ;
@@ -464,7 +477,7 @@ func_table      LABEL   WORD
 ;--------------------------------------------------------------------
 set_pages_map   PROC    NEAR
                 PUSH    AX CX DX DI
-                MOV     DI,OFFSET map_table
+                MOV     DI,CS:map_table_ofs
                 MOV     CX,PHYS_PAGES
 set_pages_map2:
                 MOV     DX,CS:[DI].phys_page_port
@@ -483,7 +496,7 @@ set_pages_map   ENDP
 reset_phys_page PROC    NEAR
                 PUSH    AX CX DX DI
                 cbw
-                MOV     DI,OFFSET map_table
+                MOV     DI,CS:map_table_ofs
                 MOV     CL,SIZE phys_page_struct
                 MUL     CL
                 ADD     DI,AX
@@ -505,7 +518,7 @@ reset_phys_page ENDP
 ;--------------------------------------------------------------------
 check_map_data  PROC    NEAR
                 PUSH    AX CX SI DI
-                MOV     SI,OFFSET map_table
+                MOV     SI,CS:map_table_ofs
                 MOV     CX,PHYS_PAGES
 check_map_data3:
                 MOV     AX,ES:[DI].phys_page_port
@@ -646,7 +659,7 @@ func5:                                          ;v0.6....
                 SHL     SI,1
                 CMP     byte ptr [SI].handle_flag,0;active handle ?
                 je      f5a
-                MOV     DI,OFFSET map_table     ;get phys_page_struct pointer..
+                MOV     DI,CS:map_table_ofs     ;get phys_page_struct pointer..
                 mov     cl,al
                 MOV     AX,SIZE phys_page_struct
                 MUL     CL
@@ -748,7 +761,7 @@ f64:
                 SUB     page_ptr,AX             ;SUB page pointer
                 MOV     CX,PHYS_PAGES           ;deallocate physical page...
                 XOR     AL,AL
-                MOV     SI,OFFSET map_table
+                MOV     SI,map_table_ofs
 f6a:
                 CMP     [SI],DX                 ;same handle no.?
                 JNZ     f67
@@ -830,7 +843,7 @@ f83:
                 add     ax,offset backup_map
                 mov     di,ax
                 MOV     [SI].back_address,DI
-                MOV     SI,OFFSET map_table
+                MOV     SI,map_table_ofs
                 MOV     CX,CONTEXT_SIZE/2
                 REPZ    MOVSW
                 INC     backup_count
@@ -860,7 +873,7 @@ func9:
                 JZ      f92
                 MOV     CX,CONTEXT_SIZE/2       ;move mapping data...
                 MOV     SI,[BX].back_address
-                MOV     DI,OFFSET map_table
+                MOV     DI,map_table_ofs
                 PUSH    DI
                 REPZ    MOVSW
                 POP     DI
@@ -987,7 +1000,7 @@ func15:
 ;       AH      : status
 ;--------------------------------------------------------------------
 get_page_map:
-                MOV     SI,OFFSET map_table
+                MOV     SI,map_table_ofs
                 MOV     CX,CONTEXT_SIZE/2
                 REPZ    MOVSW
                 JMP     noerr                   ;exit
@@ -1016,7 +1029,7 @@ set_page_map3:
                 MOV     SI,DI
                 push    cs
                 pop     es
-                MOV     DI,OFFSET map_table
+                MOV     DI,CS:map_table_ofs
                 MOV     CX,CONTEXT_SIZE/2
                 REPZ    MOVSW
                 CALL    set_pages_map           ;mapping physical pages.
@@ -1042,7 +1055,7 @@ get_set_page_map:
                 MOV     CX,CONTEXT_SIZE/2
                 REPZ    MOVSW
                 POP     ES DS DI
-                MOV     SI,OFFSET map_table     ;move current map data...
+                MOV     SI,CS:map_table_ofs     ;move current map data...
                 MOV     CX,CONTEXT_SIZE/2
                 REPZ    MOVSW
                 MOV     AX,SS
@@ -1114,7 +1127,7 @@ get_partial_map:
 get_partial_map4:
                 LODSW
                 PUSH    CX
-                MOV     BX,OFFSET map_table
+                MOV     BX,CS:map_table_ofs
                 MOV     CX,PHYS_PAGES
 get_partial_map3:
                 CMP     AX,CS:[BX].phys_seg_addr
@@ -1167,7 +1180,7 @@ set_partial_map4:
                 MOV     AX,[SI].phys_seg_addr
                 CALL    change_seg_page         ;change segment -> phys_page_no
                 JC      set_partial_map3
-                MOV     DI,OFFSET map_table
+                MOV     DI,CS:map_table_ofs
                 PUSH    CX
                 MOV     CX,SIZE phys_page_struct
                 MUL     CL
@@ -2192,7 +2205,7 @@ f2435:
                 or      al,[si].dest_type       ;
                 jz      f2436
                 mov     cx,SIZE phys_page_struct
-                mov     si,offset map_table
+                mov     si,CS:map_table_ofs
                 mov     di,offset f24_data
                 mov     ax,cs
                 mov     ds,ax
@@ -2208,7 +2221,7 @@ f2436:
                 jz      f2439
                 mov     cx,SIZE phys_page_struct
                 mov     si,offset f24_data
-                mov     di,offset map_table
+                mov     di,CS:map_table_ofs
 f2440:
                 mov     ax,cs
                 mov     ds,ax
@@ -2379,7 +2392,7 @@ get_map_phys_addr:
                 MOV     AX,[BP].es_save
                 MOV     ES,AX
                 MOV     CX,PHYS_PAGES
-                MOV     SI,OFFSET map_table
+                MOV     SI,CS:map_table_ofs
                 XOR     DX,DX
 get_map_phys_addr1:
                 MOV     AX,[SI].phys_seg_addr
@@ -2550,7 +2563,7 @@ get_alter_map_reg:
                 MOV     ES,AX
                 OR      AX,DI
                 JZ      get_alter_map_reg1
-                MOV     SI,OFFSET map_table
+                MOV     SI,CS:map_table_ofs
                 PUSH    CS
                 POP     DS
                 MOV     CX,CONTEXT_SIZE/2
@@ -2596,7 +2609,7 @@ set_alter_map_reg:
                 push    es
                 pop     ds
                 mov     cx,CONTEXT_SIZE/2
-                mov     di,offset map_table
+                mov     di,CS:map_table_ofs
                 push    cs
                 pop     es
                 rep     movsw
@@ -2614,7 +2627,7 @@ func29:
                 MOV     AX,CS
                 MOV     ES,AX
                 MOV     DS,AX
-                MOV     DI,OFFSET map_table     ;disable physical pages...
+                MOV     DI,CS:map_table_ofs     ;disable physical pages...
                 MOV     CX,PHYS_PAGES
 f291:
                 MOV     [DI].emm_handle2,UNMAP
@@ -2832,7 +2845,7 @@ check_handle    ENDP
 set_phys_page   PROC    NEAR
                 PUSH    AX CX DX DI
                 cbw
-                MOV     DI,OFFSET map_table
+                MOV     DI,CS:map_table_ofs
                 MOV     CL,SIZE phys_page_struct
                 MUL     CL
                 ADD     DI,AX
@@ -2857,7 +2870,7 @@ set_phys_page   ENDP
 change_seg_page PROC    NEAR
                 PUSH    BX CX DI
                 XOR     BX,BX
-                MOV     DI,OFFSET map_table
+                MOV     DI,CS:map_table_ofs
                 MOV     CX,PHYS_PAGES
                 CLC                             ;reset CF
 change_seg_page2:
@@ -2970,24 +2983,35 @@ getprm          PROC    NEAR
 getpr2:
                 MOV     AL,ES:[DI]
                 CMP     AL,CR
-                JZ      getpr4
-                CMP     AL,'/'          ;set page frame address?
-                jne     getpr5
-                inc     di
+                JNZ     getpr14
+                JMP     getpr4
+getpr14:        CMP     AL,'/'          ;set page frame address?
+                JE      getpr15
+                JMP     getpr5
+getpr15:        INC     DI
                 MOV     AL,ES:[DI]
                 OR      AL,20h          ;tolower
                 CMP     AL,'p'          ;set page frame address?
                 JNZ     getpr3
+                INT     3               ;debug breakpoint
                 INC     DI
                 MOV     AL,ES:[DI]
                 CMP     AL,':'
                 JNZ     getpr5
                 INC     DI
                 CALL    ascbin2         ;change data ascii -> binary.
-                JNC     getpr8          ;error ?
-                JMP     getpr5
-getpr8:
-                MOV     page_frame_seg,AX
+                JC      getpr5          ;error ?
+                MOV     SI,OFFSET map_table     ;search map table entry
+                PUSH    CX                      ;save CL value (sys.flags)
+                MOV     CX,MAP_TABLE_ITEMS-4
+getpr11:        CMP     [SI].phys_seg_addr,AX
+                JE      getpr12                 ;table entry found?
+                ADD     SI,SIZE phys_page_struct
+                LOOP    getpr11
+                JMP     getpr8
+getpr12:        MOV     map_table_ofs,SI        ;save map table offset
+                MOV     page_frame_seg,AX       ;save page frame segment
+getpr8:         POP     CX                      ;restore option flags
                 JMP     getpr5
 getpr3:
                 CMP     AL,'i'          ;set EMS i/o port address?
@@ -3035,10 +3059,6 @@ getpr5:
                 JMP     getpr2
 getpr4:
                 MOV     sysflg,CL       ;set system option flag.
-                ; compute EMS I/O address base
-                MOV     AX, emsio_ofs
-                ADD     AX, page_frame_seg
-                MOV     emsio, AX
                 POP     DS
                 RET
 getprm          ENDP
@@ -3055,7 +3075,7 @@ instmsg         PROC    NEAR
                 MOV     AX,total_pages
                 MOV     DI,OFFSET total_pg
                 CALL    dbinasc
-                MOV     AX,emsio
+                MOV     AX,emsio_ofs
                 MOV     DI,OFFSET pioadr
                 CALL    hbinasc
                 MOV     AX,total_pages
@@ -3069,7 +3089,7 @@ instmsg         PROC    NEAR
                 RET
 instmsg         ENDP
 ;--------------------------------------------------------------------
-; Enable EMA and check EMS i/o port.
+; Enable Expanded Memory and check EMS i/o port.
 ; output
 ;       cf = 0 : OK
 ;       cf = 1 : NG
@@ -3082,7 +3102,8 @@ ckemsio         PROC    NEAR
                 OUT     6Fh, AL
                 XOR     AL, AL          ; disable config mode
                 OUT     6Ch, AL
-                MOV     DX,CS:EMSIO
+                MOV     DX, CS:emsio_ofs
+                ADD     DX, CS:page_frame_seg
                 IN      AL,DX
                 CMP     AL,255                  ;check TRS flag
                 JE      ckems3
@@ -3105,20 +3126,15 @@ ramchk          PROC    NEAR
                 PUSH    AX BX CX DX BP
                 PUSH    CS
                 POP     DS
-                MOV     DI,OFFSET map_table
+                MOV     DI,map_table_ofs
                 MOV     CX,PHYS_PAGES
-                MOV     BX,emsio
-                MOV     SI,page_frame_seg
 ramch14:
-                MOV     [DI].phys_page_port,BX
-                MOV     [DI].log_page_data,0
-                MOV     [DI].phys_seg_addr,SI
-                ADD     DI,SIZE phys_page_struct
-                ADD     SI,0400H
-                MOV     DX,BX                   ;disable physical pages ---
-                MOV     AL,DIS_EMS
+                MOV     DX,[DI].phys_page_port  ;get base I/O address
+                ADD     DX,emsio_ofs            ;add I/O offset
+                MOV     [DI].phys_page_port,DX  ;save actual I/O port
+                MOV     AL,DIS_EMS              ;disable physical pages
                 OUT     DX,AL
-                INC     BX                      ; FE2011 mapping registers are sequential from base address
+                ADD     DI,SIZE phys_page_struct
                 LOOP    ramch14
                 MOV     SI,OFFSET pagemsg       ;display page test msg..
                 CALL    strdsp
@@ -3126,8 +3142,9 @@ ramch14:
                 OR      AL,4                    ;system memory parity disable
                 and     al,0feh
                 OUT     I8042+1,AL
+                MOV     DI,map_table_ofs
+                MOV     DX,[DI].phys_page_port  ;get I/O port of phys page 0
                 MOV     DI,OFFSET log_page
-                MOV     DX,emsio
                 MOV     AL,pageofs              ;get EMS logical page start no.
                 xor     ah,ah
                 MOV     CX,PAGE_MAX
@@ -3479,6 +3496,7 @@ ascbin24:
                 JC      ascbin22
                 CMP     AL,':'
                 JC      ascbin26
+                AND     AL,0DFh         ;toupper
                 CMP     AL,'A'
                 JC      ascbin22
                 CMP     AL,'G'
@@ -3547,11 +3565,9 @@ testkb1:
 testkb2:
                 pop     ax
                 ret
-;____________________________________________________________________
-;
+;--------------------------------------------------------------------
 ;               This is "EXE" part of this driver
-;
-;____________________________________________________________________
+;--------------------------------------------------------------------
 info:
                 push    cs
                 pop     ds
@@ -3561,14 +3577,14 @@ info:
                 call    strdsp
                 mov     ax,4c00h                ;Exit to DOS
                 int     21h
-;____________________________________________________________________
+;--------------------------------------------------------------------
 
 ;--------------------------------------------------------------------
 ;       EMM driver initial routine work data area
 ;--------------------------------------------------------------------
 start_msg       db      CR,LF
                 DB      'WDEMM: WD FE2011 EMM Driver '
-msg_ver         db      'r01'
+msg_ver         db      'r02'
                 DB      CR,LF,'$'
 install_msg     label   byte
 page_msg        DB      'Page frame specification: Frame Segment at '
@@ -3591,8 +3607,8 @@ info_msg        db       CR,LF
                 db       CR,LF
                 db      '  /p:nnnn - Page frame address(E000)',CR,LF
                 db      '  /i:nnn  - EMS i/o port base address(400)',CR,LF
-                db      '  /h:nnn  - Maximal number of handles(64)',CR,LF
-                db      '  /d:nn   - Depth of contest saves(5)',CR,LF
+;                db      '  /h:nnn  - Maximal number of handles(64)',CR,LF
+;                db      '  /d:nn   - Depth of contest saves(5)',CR,LF
                 db      '  /f:nnn  - First page number(0)',CR,LF
                 db      '  /n      - Bypass memory test',CR,LF
                 db      '  /x      - Perform long memory test',CR,LF
@@ -3604,9 +3620,9 @@ pageofs         DB      0               ;logical page no. offset data
 sysflg          DB      0               ;system option flag
 chkchr          DW      55AAH
 code            ENDS
-;
-;   Stack segment
-;
+;--------------------------------------------------------------------
+;       Stack segment
+;--------------------------------------------------------------------
 stk             SEGMENT STACK 'STACK'
                 DB      200h    dup(?)
 stk             ENDS

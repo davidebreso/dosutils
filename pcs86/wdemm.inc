@@ -98,6 +98,7 @@ UNALLOC                 EQU     0FFFFH  ;unallocate code
 PUSH_REG                EQU     8 * 2   ;push register size
 EMMWORK                 EQU     50      ;EMM driver work area size
 RET_SP                  EQU     EMMWORK+PUSH_REG+6+10   ;int67 stack size
+MAP_TABLE_ITEMS         EQU     12      ;number of items in map tables
 PHYS_PAGES              EQU     4       ;physical page count
 RAW_PAGES               EQU     400H    ;raw page size (16KB)
 CONTEXT_SIZE            EQU     SIZE phys_page_struct * PHYS_PAGES
@@ -224,4 +225,3 @@ ret_struct      STRUC
     ret_segment DW      ?                       ;return segment address
     ret_flag    DW      ?                       ;return flags
 ret_struct      ENDS
-
