@@ -99,7 +99,7 @@ PUSH_REG                EQU     8 * 2   ;push register size
 EMMWORK                 EQU     128     ;EMM driver work area size
 RET_SP                  EQU     EMMWORK+PUSH_REG+6+10   ;int67 stack size
 MAX_PHYS_PAGES          EQU     12      ;max phyisical page count
-PHYS_PAGES              EQU     4       ;default physical page count
+DEF_PHYS_PAGES          EQU     4       ;default physical page count
 RAW_PAGES               EQU     400H    ;raw page size (16KB)
 CONTEXT_SIZE            EQU     SIZE phys_page_struct * MAX_PHYS_PAGES
 ALTER_REGS              EQU     0       ;alter map register set count
