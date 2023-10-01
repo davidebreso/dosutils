@@ -96,12 +96,12 @@ HANDLE_NAME_SIZE        EQU     8       ;EMM handle name byte size
 UNMAP                   EQU     0FFFFH  ;unmap code
 UNALLOC                 EQU     0FFFFH  ;unallocate code
 PUSH_REG                EQU     8 * 2   ;push register size
-EMMWORK                 EQU     50      ;EMM driver work area size
+EMMWORK                 EQU     128     ;EMM driver work area size
 RET_SP                  EQU     EMMWORK+PUSH_REG+6+10   ;int67 stack size
-MAP_TABLE_ITEMS         EQU     12      ;number of items in map tables
-PHYS_PAGES              EQU     4       ;physical page count
+MAX_PHYS_PAGES          EQU     12      ;max phyisical page count
+PHYS_PAGES              EQU     4       ;default physical page count
 RAW_PAGES               EQU     400H    ;raw page size (16KB)
-CONTEXT_SIZE            EQU     SIZE phys_page_struct * PHYS_PAGES
+CONTEXT_SIZE            EQU     SIZE phys_page_struct * MAX_PHYS_PAGES
 ALTER_REGS              EQU     0       ;alter map register set count
 DMA_REGS                EQU     0       ;alter DMA register set count
 DMA_CHANNEL             EQU     0       ;DMA channel number
@@ -135,7 +135,7 @@ f17_struct                      STRUC
                                 DW      8 DUP (?)
     f17_ax_save                 DW      ?
     f17_map_len                 DW      ?
-    f17_map_data                DB      PHYS_PAGES * 4 DUP (?)
+    f17_map_data                DB      MAX_PHYS_PAGES * 4 DUP (?)
 f17_struct                      ENDS
 
 ;
@@ -147,7 +147,7 @@ f22_struct                      STRUC
     f22_target_off              DW      ?
     f22_target_seg              DW      ?
     f22_map_len                 DW      ?
-    f22_map_data                DB      PHYS_PAGES * 4 DUP (?)
+    f22_map_data                DB      MAX_PHYS_PAGES * 4 DUP (?)
 f22_struct                      ENDS
 
 ;
@@ -162,9 +162,9 @@ f23_struct                      STRUC
     f23_retseg                  DW      ?
     f23_ax_save                 DW      ?
     f23_new_map_len             DW      ?
-    f23_new_map_data            DB      PHYS_PAGES * 4 DUP (?)
+    f23_new_map_data            DB      MAX_PHYS_PAGES * 4 DUP (?)
     f23_old_map_len             DW      ?
-    f23_old_map_data            DB      PHYS_PAGES * 4 DUP (?)
+    f23_old_map_data            DB      MAX_PHYS_PAGES * 4 DUP (?)
 f23_struct                      ENDS
 
 ;
@@ -225,3 +225,4 @@ ret_struct      STRUC
     ret_segment DW      ?                       ;return segment address
     ret_flag    DW      ?                       ;return flags
 ret_struct      ENDS
+

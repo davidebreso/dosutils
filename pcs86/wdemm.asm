@@ -68,10 +68,13 @@ jump_addr       DW      0               ;EMM function jump address data area
 ;
 ;       physical page status data area
 ;
-map_table_ofs   DW      OFFSET map_table_def
 map_table       LABEL   phys_page_struct
-;                DB      SIZE phys_page_struct * PHYS_PAGES DUP (-1)
+;                DB      SIZE phys_page_struct * MAX_PHYS_PAGES DUP (-1)
 ;       <emm_handle2, phys_page_port, pyhs_seg_addr, log_page_data>
+                phys_page_struct <UNMAP, 0E000h, 0E000h, 0>
+                phys_page_struct <UNMAP, 0E001h, 0E400h, 0>
+                phys_page_struct <UNMAP, 0E002h, 0E800h, 0>
+                phys_page_struct <UNMAP, 0E003h, 0EC00h, 0>
                 phys_page_struct <UNMAP, 0C000h, 0C000h, 0>
                 phys_page_struct <UNMAP, 0C001h, 0C400h, 0>
                 phys_page_struct <UNMAP, 0C002h, 0C800h, 0>
@@ -80,10 +83,7 @@ map_table       LABEL   phys_page_struct
                 phys_page_struct <UNMAP, 0D001h, 0D400h, 0>
                 phys_page_struct <UNMAP, 0D002h, 0D800h, 0>
                 phys_page_struct <UNMAP, 0D003h, 0DC00h, 0>
-map_table_def   phys_page_struct <UNMAP, 0E000h, 0E000h, 0>
-                phys_page_struct <UNMAP, 0E001h, 0E400h, 0>
-                phys_page_struct <UNMAP, 0E002h, 0E800h, 0>
-                phys_page_struct <UNMAP, 0E003h, 0EC00h, 0>
+map_table_end   LABEL BYTE
 ;
 ;       handle status flag buffer pointers (handle)
 ;
@@ -477,7 +477,7 @@ func_table      LABEL   WORD
 ;--------------------------------------------------------------------
 set_pages_map   PROC    NEAR
                 PUSH    AX CX DX DI
-                MOV     DI,CS:map_table_ofs
+                MOV     DI,OFFSET map_table
                 MOV     CX,PHYS_PAGES
 set_pages_map2:
                 MOV     DX,CS:[DI].phys_page_port
@@ -496,7 +496,7 @@ set_pages_map   ENDP
 reset_phys_page PROC    NEAR
                 PUSH    AX CX DX DI
                 cbw
-                MOV     DI,CS:map_table_ofs
+                MOV     DI,OFFSET map_table
                 MOV     CL,SIZE phys_page_struct
                 MUL     CL
                 ADD     DI,AX
@@ -518,7 +518,7 @@ reset_phys_page ENDP
 ;--------------------------------------------------------------------
 check_map_data  PROC    NEAR
                 PUSH    AX CX SI DI
-                MOV     SI,CS:map_table_ofs
+                MOV     SI,OFFSET map_table
                 MOV     CX,PHYS_PAGES
 check_map_data3:
                 MOV     AX,ES:[DI].phys_page_port
@@ -659,7 +659,7 @@ func5:                                          ;v0.6....
                 SHL     SI,1
                 CMP     byte ptr [SI].handle_flag,0;active handle ?
                 je      f5a
-                MOV     DI,CS:map_table_ofs     ;get phys_page_struct pointer..
+                MOV     DI,OFFSET map_table     ;get phys_page_struct pointer..
                 mov     cl,al
                 MOV     AX,SIZE phys_page_struct
                 MUL     CL
@@ -761,7 +761,7 @@ f64:
                 SUB     page_ptr,AX             ;SUB page pointer
                 MOV     CX,PHYS_PAGES           ;deallocate physical page...
                 XOR     AL,AL
-                MOV     SI,map_table_ofs
+                MOV     SI,OFFSET map_table
 f6a:
                 CMP     [SI],DX                 ;same handle no.?
                 JNZ     f67
@@ -843,7 +843,7 @@ f83:
                 add     ax,offset backup_map
                 mov     di,ax
                 MOV     [SI].back_address,DI
-                MOV     SI,map_table_ofs
+                MOV     SI,OFFSET map_table
                 MOV     CX,CONTEXT_SIZE/2
                 REPZ    MOVSW
                 INC     backup_count
@@ -873,7 +873,7 @@ func9:
                 JZ      f92
                 MOV     CX,CONTEXT_SIZE/2       ;move mapping data...
                 MOV     SI,[BX].back_address
-                MOV     DI,map_table_ofs
+                MOV     DI,OFFSET map_table
                 PUSH    DI
                 REPZ    MOVSW
                 POP     DI
@@ -1000,7 +1000,7 @@ func15:
 ;       AH      : status
 ;--------------------------------------------------------------------
 get_page_map:
-                MOV     SI,map_table_ofs
+                MOV     SI,OFFSET map_table
                 MOV     CX,CONTEXT_SIZE/2
                 REPZ    MOVSW
                 JMP     noerr                   ;exit
@@ -1029,7 +1029,7 @@ set_page_map3:
                 MOV     SI,DI
                 push    cs
                 pop     es
-                MOV     DI,CS:map_table_ofs
+                MOV     DI,OFFSET map_table
                 MOV     CX,CONTEXT_SIZE/2
                 REPZ    MOVSW
                 CALL    set_pages_map           ;mapping physical pages.
@@ -1055,7 +1055,7 @@ get_set_page_map:
                 MOV     CX,CONTEXT_SIZE/2
                 REPZ    MOVSW
                 POP     ES DS DI
-                MOV     SI,CS:map_table_ofs     ;move current map data...
+                MOV     SI,OFFSET map_table     ;move current map data...
                 MOV     CX,CONTEXT_SIZE/2
                 REPZ    MOVSW
                 MOV     AX,SS
@@ -1127,7 +1127,7 @@ get_partial_map:
 get_partial_map4:
                 LODSW
                 PUSH    CX
-                MOV     BX,CS:map_table_ofs
+                MOV     BX,OFFSET map_table
                 MOV     CX,PHYS_PAGES
 get_partial_map3:
                 CMP     AX,CS:[BX].phys_seg_addr
@@ -1180,7 +1180,7 @@ set_partial_map4:
                 MOV     AX,[SI].phys_seg_addr
                 CALL    change_seg_page         ;change segment -> phys_page_no
                 JC      set_partial_map3
-                MOV     DI,CS:map_table_ofs
+                MOV     DI,OFFSET map_table
                 PUSH    CX
                 MOV     CX,SIZE phys_page_struct
                 MUL     CL
@@ -2205,7 +2205,7 @@ f2435:
                 or      al,[si].dest_type       ;
                 jz      f2436
                 mov     cx,SIZE phys_page_struct
-                mov     si,CS:map_table_ofs
+                mov     si,OFFSET map_table
                 mov     di,offset f24_data
                 mov     ax,cs
                 mov     ds,ax
@@ -2221,7 +2221,7 @@ f2436:
                 jz      f2439
                 mov     cx,SIZE phys_page_struct
                 mov     si,offset f24_data
-                mov     di,CS:map_table_ofs
+                mov     di,OFFSET map_table
 f2440:
                 mov     ax,cs
                 mov     ds,ax
@@ -2392,7 +2392,7 @@ get_map_phys_addr:
                 MOV     AX,[BP].es_save
                 MOV     ES,AX
                 MOV     CX,PHYS_PAGES
-                MOV     SI,CS:map_table_ofs
+                MOV     SI,OFFSET map_table
                 XOR     DX,DX
 get_map_phys_addr1:
                 MOV     AX,[SI].phys_seg_addr
@@ -2563,7 +2563,7 @@ get_alter_map_reg:
                 MOV     ES,AX
                 OR      AX,DI
                 JZ      get_alter_map_reg1
-                MOV     SI,CS:map_table_ofs
+                MOV     SI,OFFSET map_table
                 PUSH    CS
                 POP     DS
                 MOV     CX,CONTEXT_SIZE/2
@@ -2609,7 +2609,7 @@ set_alter_map_reg:
                 push    es
                 pop     ds
                 mov     cx,CONTEXT_SIZE/2
-                mov     di,CS:map_table_ofs
+                mov     di,OFFSET map_table
                 push    cs
                 pop     es
                 rep     movsw
@@ -2627,7 +2627,7 @@ func29:
                 MOV     AX,CS
                 MOV     ES,AX
                 MOV     DS,AX
-                MOV     DI,CS:map_table_ofs     ;disable physical pages...
+                MOV     DI,OFFSET map_table     ;disable physical pages...
                 MOV     CX,PHYS_PAGES
 f291:
                 MOV     [DI].emm_handle2,UNMAP
@@ -2845,7 +2845,7 @@ check_handle    ENDP
 set_phys_page   PROC    NEAR
                 PUSH    AX CX DX DI
                 cbw
-                MOV     DI,CS:map_table_ofs
+                MOV     DI,OFFSET map_table
                 MOV     CL,SIZE phys_page_struct
                 MUL     CL
                 ADD     DI,AX
@@ -2870,7 +2870,7 @@ set_phys_page   ENDP
 change_seg_page PROC    NEAR
                 PUSH    BX CX DI
                 XOR     BX,BX
-                MOV     DI,CS:map_table_ofs
+                MOV     DI,OFFSET map_table
                 MOV     CX,PHYS_PAGES
                 CLC                             ;reset CF
 change_seg_page2:
@@ -2894,7 +2894,8 @@ change_seg_page ENDP
 ;       handle name buffer
 ;
 handle_name     LABEL   BYTE
-                DB      HANDLE_NAME_SIZE * HANDLE_CNT DUP (0)
+                DB      'SYSTEM  '          ;System handle name
+                DB      HANDLE_NAME_SIZE * (HANDLE_CNT - 1) DUP (0)
 ;
 ;       f24 Save area
 ;
@@ -2997,21 +2998,45 @@ getpr15:        INC     DI
                 INC     DI
                 MOV     AL,ES:[DI]
                 CMP     AL,':'
-                JNZ     getpr5
-                INC     DI
+                JZ      getpr17
+                JMP     getpr5
+getpr17:        INC     DI
                 CALL    ascbin2         ;change data ascii -> binary.
-                JC      getpr5          ;error ?
-                MOV     SI,OFFSET map_table     ;search map table entry
+                JNC     getpr18         ;error ?
+                JMP     getpr5
+getpr18:        MOV     SI,OFFSET map_table     ;search map table entry
+                PUSH    ES                      ;save ES value
                 PUSH    CX                      ;save CL value (sys.flags)
-                MOV     CX,MAP_TABLE_ITEMS-4
-getpr11:        CMP     [SI].phys_seg_addr,AX
+                PUSH    DI
+                MOV     CX,MAX_PHYS_PAGES-3     ;we need 4 contiuous pages
+                                                ;for the page buffer
+getpr11:        CMP     AX,[SI].phys_seg_addr
                 JE      getpr12                 ;table entry found?
                 ADD     SI,SIZE phys_page_struct
                 LOOP    getpr11
                 JMP     getpr8
-getpr12:        MOV     map_table_ofs,SI        ;save map table offset
+getpr12:
                 MOV     page_frame_seg,AX       ;save page frame segment
-getpr8:         POP     CX                      ;restore option flags
+                CMP     SI,OFFSET map_table
+                JE      getpr8                  ;rotate?
+                MOV     AX,DS
+                MOV     ES,AX                   ;now ES=DS
+                MOV     DI,OFFSET temp_table    ;ES:DI points to temp_table
+                PUSH    SI                      ;save initial source pointer
+                MOV     CX,OFFSET map_table_end
+                SUB     CX,SI                   ;number of bytes to copy
+                REP     MOVSB
+                MOV     SI,OFFSET map_table     ;reset source pointer
+                POP     CX
+                SUB     CX,OFFSET map_table     ;number of bytes to copy
+                REP     MOVSB
+                MOV     SI,offset temp_table
+                MOV     DI,offset map_table
+                MOV     CX,CONTEXT_SIZE/2       ;number of words to copy
+                REP     MOVSW
+getpr8:         POP     DI
+                POP     CX                      ;restore option flags
+                POP     ES                      ;restore ES
                 JMP     getpr5
 getpr3:
                 CMP     AL,'i'          ;set EMS i/o port address?
@@ -3126,7 +3151,7 @@ ramchk          PROC    NEAR
                 PUSH    AX BX CX DX BP
                 PUSH    CS
                 POP     DS
-                MOV     DI,map_table_ofs
+                MOV     DI,OFFSET map_table
                 MOV     CX,PHYS_PAGES
 ramch14:
                 MOV     DX,[DI].phys_page_port  ;get base I/O address
@@ -3142,7 +3167,7 @@ ramch14:
                 OR      AL,4                    ;system memory parity disable
                 and     al,0feh
                 OUT     I8042+1,AL
-                MOV     DI,map_table_ofs
+                MOV     DI,OFFSET map_table
                 MOV     DX,[DI].phys_page_port  ;get I/O port of phys page 0
                 MOV     DI,OFFSET log_page
                 MOV     AL,pageofs              ;get EMS logical page start no.
@@ -3609,7 +3634,7 @@ info_msg        db       CR,LF
                 db      '  /i:nnn  - EMS i/o port base address(400)',CR,LF
 ;                db      '  /h:nnn  - Maximal number of handles(64)',CR,LF
 ;                db      '  /d:nn   - Depth of contest saves(5)',CR,LF
-                db      '  /f:nnn  - First page number(0)',CR,LF
+;                db      '  /f:nnn  - First page number(0)',CR,LF
                 db      '  /n      - Bypass memory test',CR,LF
                 db      '  /x      - Perform long memory test',CR,LF
                 db      '  /3      - Use only EMS 3.2 functions',CR,LF
@@ -3619,6 +3644,7 @@ info_msg        db       CR,LF
 pageofs         DB      0               ;logical page no. offset data
 sysflg          DB      0               ;system option flag
 chkchr          DW      55AAH
+temp_table      DB      SIZE phys_page_struct * MAX_PHYS_PAGES DUP (-1)
 code            ENDS
 ;--------------------------------------------------------------------
 ;       Stack segment
