@@ -3171,8 +3171,8 @@ ramch14:
                 MOV     DI,OFFSET map_table
                 MOV     DX,[DI].phys_page_port  ;get I/O port of phys page 0
                 MOV     DI,OFFSET log_page
-                MOV     AL,pageofs              ;get EMS logical page start no.
-                xor     ah,ah
+;;                MOV     AL,pageofs              ;get EMS logical page start no.
+                xor     ax,ax
                 MOV     CX,PAGE_MAX
                 sub     cx,ax
                 jng     ramch16
@@ -3636,14 +3636,14 @@ info_msg        db       CR,LF
                 db      '  /i:nnn  - EMS i/o port base address(400)',CR,LF
 ;                db      '  /h:nnn  - Maximal number of handles(64)',CR,LF
 ;                db      '  /d:nn   - Depth of contest saves(5)',CR,LF
-                db      '  /p:nn  - Number of physical pages(4)',CR,LF
+                db      '  /p:nn   - Number of physical pages(4)',CR,LF
                 db      '  /n      - Bypass memory test',CR,LF
                 db      '  /x      - Perform long memory test',CR,LF
                 db      '  /3      - Use only EMS 3.2 functions',CR,LF
                 db      '  /q      - Quiet mode',CR,LF
                 db       CR,LF
                 db      'Defaults in parentheses.',CR,LF,'$'
-pageofs         DB      0               ;logical page no. offset data
+;pageofs         DB      0               ;logical page no. offset data
 sysflg          DB      0               ;system option flag
 chkchr          DW      55AAH
 temp_table      DB      SIZE phys_page_struct * MAX_PHYS_PAGES DUP (-1)
