@@ -2984,28 +2984,31 @@ getprm          PROC    NEAR
                 XOR     CL,CL
 getpr2:
                 MOV     AL,ES:[DI]
-                CMP     AL,CR
-                JNZ     getpr14
-                JMP     getpr4
-getpr14:        CMP     AL,'/'          ;set page frame address?
+                CMP     AL,' '          ;special character?
+                JNB     getpr14         ;no, parse character
+                JMP     getpr4          ;yes, terminate parsing
+getpr14:        CMP     AL,'/'          ;parameter?
                 JE      getpr15
                 JMP     getpr5
 getpr15:        INC     DI
                 MOV     AL,ES:[DI]
+                CMP     AL,'A'          ;smaller than 'A'?
+                JB      getpr18         ;yes, keep as is
+                CMP     AL,'Z'          ;larger than 'Z'?
+                JA      getpr18         ;yes, keep as is
                 OR      AL,20h          ;tolower
-                CMP     AL,'s'          ;set page frame address?
+getpr18:        CMP     AL,'s'          ;set page frame address?
                 JNZ     getpr3
-                INT     3               ;debug breakpoint
                 INC     DI
                 MOV     AL,ES:[DI]
                 CMP     AL,':'
-                JZ      getpr17
+                JZ      getpr16
                 JMP     getpr5
-getpr17:        INC     DI
+getpr16:        INC     DI
                 CALL    ascbin2         ;change data ascii -> binary.
-                JNC     getpr18         ;error ?
+                JNC     getpr17         ;error ?
                 JMP     getpr5
-getpr18:        MOV     SI,OFFSET map_table     ;search map table entry
+getpr17:        MOV     SI,OFFSET map_table     ;search map table entry
                 PUSH    ES                      ;save ES value
                 PUSH    CX                      ;save CL value (sys.flags)
                 PUSH    DI
@@ -3067,6 +3070,11 @@ getpr7:
                 OR      CL,4
                 JMP     getpr5
 getpr1:
+                CMP     AL,'z'          ;set no ticking noise
+                JNZ     getpr13
+                OR      CL,16
+                JMP     getpr5
+getpr13:
                 CMP     AL,'n'          ;set notest mode
                 JNZ     getpr10
                 OR      CL,8
@@ -3240,6 +3248,8 @@ imgchk          PROC    NEAR
                 POP     ES
                 test    ah,3
                 jnz     imgchk2
+                test    byte ptr sysflg,16      ;supress ticking noise
+                jnz     imgchk2
                 IN      AL,I8042+1
                 or      AL,2
                 OUT     I8042+1,AL
@@ -3250,9 +3260,12 @@ imgchk2:
                 CALL    dbinasc                 ;change binary -> ascii.
                 MOV     SI,OFFSET tstpage       ;display message..
                 CALL    strdsp
+                test    byte ptr sysflg,16      ;supress ticking noise
+                jnz     imgchk21
                 IN      AL,I8042+1
                 and     AL,0fdh
                 OUT     I8042+1,AL
+imgchk21:
                 MOV     AX,page_frame_seg
                 MOV     ES,AX
                 MOV     ax,chkchr
@@ -3611,8 +3624,8 @@ info:
 ;--------------------------------------------------------------------
 start_msg       db      CR,LF
                 DB      'WDEMM: WD FE2011 EMM Driver '
-msg_ver         db      'r02'
-                DB      CR,LF,'$'
+msg_ver         db      '4.0'
+                DB      ' - r03',CR,LF,'$'
 install_msg     label   byte
 page_msg        DB      'Page frame specification: Frame Segment at '
 segadr          DB      '0000',CR,LF
@@ -3641,6 +3654,7 @@ info_msg        db       CR,LF
                 db      '  /x      - Perform long memory test',CR,LF
                 db      '  /3      - Use only EMS 3.2 functions',CR,LF
                 db      '  /q      - Quiet mode',CR,LF
+                db      '  /z      - No ticking noise',CR,LF
                 db       CR,LF
                 db      'Defaults in parentheses.',CR,LF,'$'
 ;pageofs         DB      0               ;logical page no. offset data
