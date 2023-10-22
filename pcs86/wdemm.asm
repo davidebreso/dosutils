@@ -2909,25 +2909,28 @@ emminit:
                 PUSH    CX DX SI DI ES BP       ;Store registers...
                 PUSH    CS
                 POP     DS
-                XOR     AX,AX
-                MOV     ES,AX
-                MOV     SI,19CH
-                MOV     WORD PTR ES:[SI],OFFSET int67;set int67 offset.
-                MOV     ES:[SI+2],CS            ;set int67 segment.
                 CALL    getprm                  ;get parameters
-                test    sysflg,1
+                PUSHF                           ;save return status
+                test    sysflg,1                ;EMS 3.2 mode?
                 jz      emminit1
-                call    set32
+                call    set32                   ;set EMS 3.2 message
 emminit1:
                 MOV     SI,OFFSET start_msg     ;display start messege.
                 CALL    strdsp
+                POPF                            ;restore getprm status
+                MOV     SI,OFFSET parmerr_msg   ;set error message
+                JC      errems2                 ;error?
                 CALL    ckemsio                 ;check EMS i/o port
                 jc      errems                  ;error ?
                 CALL    ramchk                  ;check EMS memory
                 jc      errems                  ;error ?
                 CALL    instmsg                 ;display install message.
+;                JMP     dryrun                  ;DEBUG: do not install driver
                 XOR     AX,AX
                 MOV     ES,AX
+                MOV     SI,19CH
+                MOV     WORD PTR ES:[SI],OFFSET int67;set int67 offset.
+                MOV     ES:[SI+2],CS            ;set int67 segment.
                 MOV     AX,ES:[46CH]
                 ADD     BX,AX                   ;make access key...
                 MOV     access_key_h,BX
@@ -2956,9 +2959,9 @@ emminit2:
                 MOV     [BX].brkseg,AX          ;break address segment set.
                 JMP     short emmint1
 errems:
-                MOV     SI,OFFSET notinst       ;display error message
-                CALL    strdsp
-                MOV     emm_flag,0              ;reset EMM install flag.
+                MOV     SI,OFFSET notinst       ;set error message
+errems2:        CALL    strdsp                  ;display error message
+dryrun:         MOV     emm_flag,0              ;reset EMM install flag.
                 PUSH    CS
                 POP     ES
                 MOV     DI,OFFSET func_table
@@ -2966,14 +2969,15 @@ errems:
                 MOV     CX,30
                 REPZ    STOSW
                 LDS     BX,ptrsav
-                MOV     AX,OFFSET func2         ;set break address offset.
-                MOV     [BX].brkoff,AX          ;set break address offset.
+                AND     [BX].status,7FFFh       ;clear status bit 15
+                MOV     [BX].media,0h           ;set zero units
+                MOV     [BX].brkoff,0h          ;set break address offset to 0.
                 MOV     [BX].brkseg,CS          ;set break address segment.
 emmint1:
                 POP     BP ES DI SI DX CX       ;Restore registers...
                 JMP     exit                    ;exit initial program.
 ;--------------------------------------------------------------------
-; Get CONFIG.SYS parameters.
+; Get CONFIG.SYS parameters. Set carry flag on error.
 ;--------------------------------------------------------------------
 getprm          PROC    NEAR
                 PUSH    DS
@@ -2982,16 +2986,28 @@ getprm          PROC    NEAR
                 MOV     AX,ES:[BX].start
                 MOV     ES,AX
                 XOR     CL,CL
+getpr0:
+                MOV     AL,ES:[DI]      ;get char
+                INC     DI              ;prepare for next char
+                CMP     AL,' '          ;is space?
+                JA      getpr0          ;is not terminator, skip
+                JE      getpr2          ;start parsing parameters
+                CMP     AL,TAB          ;is tab?
+                JE      getpr2          ;yes, start parsing parameters
+                JMP     getprok         ;end of cmdline, terminate
 getpr2:
-                MOV     AL,ES:[DI]
-                CMP     AL,' '          ;special character?
-                JNB     getpr14         ;no, parse character
-                JMP     getpr4          ;yes, terminate parsing
+                MOV     AL,ES:[DI]      ;get char
+                INC     DI              ;prepare for next
+                CMP     AL,' '          ;is space?
+                JA      getpr14         ;is not separator, parse character
+                JE      getpr2          ;is space, skip
+                CMP     AL,TAB          ;is tab?
+                JE      getpr2          ;yes, skip
+                JMP     getprok         ;control char, terminate parsing
 getpr14:        CMP     AL,'/'          ;parameter?
-                JE      getpr15
-                JMP     getpr5
-getpr15:        INC     DI
-                MOV     AL,ES:[DI]
+                JE      getpr15         ;yes, parse
+                JMP     getprerr        ;no, return error
+getpr15:        MOV     AL,ES:[DI]
                 CMP     AL,'A'          ;smaller than 'A'?
                 JB      getpr18         ;yes, keep as is
                 CMP     AL,'Z'          ;larger than 'Z'?
@@ -3001,24 +3017,29 @@ getpr18:        CMP     AL,'s'          ;set page frame address?
                 JNZ     getpr3
                 INC     DI
                 MOV     AL,ES:[DI]
-                CMP     AL,':'
+                CMP     AL,':'          ;followed by ':'?
                 JZ      getpr16
-                JMP     getpr5
+                JMP     getprerr        ;no, terminate with error
 getpr16:        INC     DI
                 CALL    ascbin2         ;change data ascii -> binary.
                 JNC     getpr17         ;error ?
-                JMP     getpr5
-getpr17:        MOV     SI,OFFSET map_table     ;search map table entry
+                JMP     getprerr        ;yes, return error
+getpr17:        CMP     AX,0E000h       ;we need 4 contiguous pages
+                JNA     getpr19         ;for the page frame
+                JMP     getprerr        ;not enough pages, return error
+getpr19:        MOV     SI,OFFSET map_table     ;search map table entry
                 PUSH    ES                      ;save ES value
                 PUSH    CX                      ;save CL value (sys.flags)
                 PUSH    DI
-                MOV     CX,MAX_PHYS_PAGES-3     ;we need 4 contiuous pages
-                                                ;for the page buffer
+                MOV     CX,MAX_PHYS_PAGES
 getpr11:        CMP     AX,[SI].phys_seg_addr
                 JE      getpr12                 ;table entry found?
                 ADD     SI,SIZE phys_page_struct
                 LOOP    getpr11
-                JMP     getpr8
+                POP     DI                      ;entry not found
+                POP     CX                      ;restore registers
+                POP     ES                      ;and
+                JMP     getprerr                ;return with error
 getpr12:
                 MOV     page_frame_seg,AX       ;save page frame segment
                 CMP     SI,OFFSET map_table
@@ -3041,29 +3062,31 @@ getpr12:
 getpr8:         POP     DI
                 POP     CX                      ;restore option flags
                 POP     ES                      ;restore ES
-                JMP     getpr5
+                JMP     getpr2          ;continue without incrementing DI
 getpr3:
                 CMP     AL,'i'          ;set EMS i/o port address?
                 JNZ     getpr6
                 INC     DI
                 MOV     AL,ES:[DI]
-                CMP     AL,':'
-                JNZ     getpr5
+                CMP     AL,':'          ;followed by ':'?
+                JNZ     getprerr        ;no, return error
                 INC     DI
                 CALL    ascbin2         ;change data ascii -> binary.
+                JC      getprerr        ;error ?
                 MOV     emsio_ofs,AX
-                JMP     getpr5
+                JMP     getpr2          ;continue without incrementing DI
 getpr6:
                 CMP     AL,'p'          ;set pysical page number?
                 JNZ     getpr7
                 INC     DI
                 MOV     AL,ES:[DI]
-                CMP     AL,':'
-                JNZ     getpr5
+                CMP     AL,':'          ;followed by ':'?
+                JNZ     getprerr        ;no, return error
                 INC     DI
                 CALL    ascbin1         ;change data ascii -> binary.
+                JC      getprerr        ;error ?
                 MOV     phys_pages,ax
-                JMP     getpr5
+                JMP     getpr2          ;continue without incrementing DI
 getpr7:
                 CMP     AL,'q'          ;set quiet mode
                 JNZ     getpr1
@@ -3086,13 +3109,18 @@ getpr10:
                 JMP     getpr5
 getpr9:
                 CMP     AL,'3'          ;set 3.2 mode
-                JNZ     getpr5
+                JNZ     getprerr        ;invalid parameter, return error
                 OR      CL,1
 getpr5:
                 INC     DI
                 JMP     getpr2
-getpr4:
+getprerr:
+                STC                     ;error: set carry flag
+                JMP     getprquit       ;terminate
+getprok:
                 MOV     sysflg,CL       ;set system option flag.
+                CLC                     ;report no error
+getprquit:
                 POP     DS
                 RET
 getprm          ENDP
@@ -3103,6 +3131,9 @@ instmsg         PROC    NEAR
                 PUSH    AX BX CX DI
                 PUSH    CS
                 POP     ES
+                MOV     AX,phys_pages
+                MOV     DI,OFFSET phys_pg
+                CALL    dbinasc
                 MOV     AX,page_frame_seg
                 MOV     DI,OFFSET segadr
                 CALL    hbinasc
@@ -3466,25 +3497,16 @@ ascbin1:
                 XOR     BX,BX
 ascbin11:
                 MOV     AL,ES:[DI]
-                CMP     AL,' '
-                JZ      ascbin13
-                CMP     AL,TAB
-                JNZ     ascbin14
-ascbin13:
-                OR      DL,DL
-                JNZ     ascbin12
-                INC     DI
-                JMP     ascbin11
+                CMP     AL,'0'
+                JB      ascbin12        ; char is less than '0', terminate
+                CMP     AL,':'
+                JB      ascbin14        ; char is valid, parse
 ascbin12:
-                OR      DL,DL
-                JNZ     ascbin16
-                STC
+                OR      DL,DL           ; do we have a result?
+                JNZ     ascbin16        ; yes, return success
+ascbin13:       STC                     ; no, return error
                 JMP     ascbin15
 ascbin14:
-                CMP     AL,'0'
-                JC      ascbin12
-                CMP     AL,':'
-                JNC     ascbin12
                 MOV     DL,1
                 SUB     AL,'0'
                 XOR     AH,AH
@@ -3516,30 +3538,15 @@ ascbin2:
                 XOR     BX,BX
 ascbin21:
                 MOV     AL,ES:[DI]
-                CMP     AL,' '
-                JZ      ascbin23
-                CMP     AL,TAB
-                JNZ     ascbin24
-ascbin23:
-                OR      DL,DL
-                JNZ     ascbin22
-                INC     DI
-                JMP     ascbin21
-ascbin22:
-                OR      DL,DL
-                JNZ     ascbin27
-                STC
-                JMP     ascbin25
-ascbin24:
-                CMP     AL,'0'
-                JC      ascbin22
-                CMP     AL,':'
-                JC      ascbin26
-                AND     AL,0DFh         ;toupper
-                CMP     AL,'A'
-                JC      ascbin22
-                CMP     AL,'G'
-                JNC     ascbin22
+                CMP     AL,'0'          ; less than '0'?
+                JB      ascbin22        ; yes, terminate
+                CMP     AL,':'          ; less or equal to '9' ?
+                JB      ascbin26        ; yes, continue
+                AND     AL,0DFh         ; no, toupper
+                CMP     AL,'A'          ; less than 'A'?
+                JC      ascbin22        ; yes, terminate
+                CMP     AL,'G'          ; greater than 'F'?
+                JNC     ascbin22        ; yes, terminate
                 SUB     AL,7
 ascbin26:
                 MOV     DL,1
@@ -3553,6 +3560,11 @@ ascbin26:
                 POP     DX
                 INC     DI
                 LOOP    ascbin21
+ascbin22:
+                OR      DL,DL           ; do we have a result?
+                JNZ     ascbin27        ; yes, return success
+                STC                     ; no, return error
+                JMP     ascbin25
 ascbin27:
                 MOV     AX,BX
                 CLC
@@ -3627,25 +3639,27 @@ start_msg       db      CR,LF
 msg_ver         db      '4.0'
                 DB      ' - r03',CR,LF,'$'
 install_msg     label   byte
-page_msg        DB      'Page frame specification: Frame Segment at '
+page_msg        DB      'Page frame specification: '
+phys_pg         DB      '0000 pages starting at segment '
 segadr          DB      '0000',CR,LF
 total_pg        DB      '0000 pages found on EMS board at '
 pioadr          DB      '0000',CR,LF
                 db      'Installation completed - '
 totmem          db      '0000K RAM Available.',CR,LF,LF,'$'
-hard_w_err      DB      'No EMS board found.',CR,LF,'$'
-nopage_err      DB      'No EMS memory found.',CR,LF,'$'
+hard_w_err      DB      'No EMS board found.                ',CR,LF,'$'
+nopage_err      DB      'No EMS memory found.               ',CR,LF,'$'
 notinst         DB      'Installation failed - No EMS available.',CR,LF,LF,'$'
+parmerr_msg     DB      'Installation failed - Invalid command line parameters.',CR,LF,LF,'$'
 pagemsg         DB      '0000 Pages testing, Esc bypass test',CR,'$'
 tstpage         DB      '0000',CR,'$'
 info_msg        db       CR,LF
                 db      'Expanded Memory Manager for the WD FE2011 chipset.',CR,LF
                 db       CR,LF
                 db      'Based on original works (c) 2014, Lo-Tech and (c) 1988, Alex Tsourikov.',CR,LF
-                db       CR,LF
+usage_msg       db       CR,LF
                 db      'Syntax:    DEVICE=WDEMM.EXE [/switches]',CR,LF
                 db       CR,LF
-                db      '  /a:nnnn - Page frame address(E000)',CR,LF
+                db      '  /s:nnnn - Page frame address(E000)',CR,LF
                 db      '  /i:nnn  - EMS i/o port base address(400)',CR,LF
 ;                db      '  /h:nnn  - Maximal number of handles(64)',CR,LF
 ;                db      '  /d:nn   - Depth of contest saves(5)',CR,LF
