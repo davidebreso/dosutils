@@ -25,7 +25,7 @@
 ;
 ; To assemble and link with Borland Turbo Assembler and Linker:
 ;       tasm rtl2umb
-;       tlink rtl2umb 
+;       tlink rtl2umb
 ;
 ; JWASM can produce .EXE files directly and do not need a linker:
 ;       jwasm -mz rtl2umb.asm
@@ -52,6 +52,7 @@ CmdLnLen    equ     byte ptr es:[80h]   ; Command line length
 CmdLn       equ     word ptr es:[81h]   ; Command line data
 tab         equ     09h
 cr          equ     0Dh
+lf          equ     0Ah
 
 ;====================================== Device driver header ================
 ;
@@ -166,20 +167,16 @@ sbLoop:     inc     bx              ; move to next character
 SkipBlanks  endp
 
 ;====================================== NextBlank proc ======================
-; Moves to the first non-blank character in the string at ES:BX.
-; It does not, however, skip the carriage return at the end of the line
-; since this character is used as the terminator of the command line.
+; Moves to the first blank character in the string at ES:BX.
+; It does not, however, skip over control characters since they are
+; used as terminators of the command line.
 ;
 NextBlank   proc    near
             dec     bx              ; to offset inc bx below
 nbLoop:     inc     bx              ; move to next character
             mov     al, es:[bx]     ; get next character
-            cmp     al, ' '         ; return if space
-            jz      nbQuit
-            cmp     al, tab         ; return if tab
-            jz      nbQuit
-            cmp     al, cr          ; return if carriage return
-            jnz     nbLoop
+            cmp     al, ' '         ; return if space or control char
+            ja      nbLoop
 nbQuit:     ret
 NextBlank   endp
 
@@ -233,14 +230,16 @@ ParseToken  endp
 ParseCmdLn  proc    near
             call    SkipBlanks      ; skip over leading blanks
             mov     al, es:[bx]     ; get next character
-            cmp     al, cr          ; Carriage return?
-            je      parseErr        ; terminate with a message error if cr
+            cmp     al, ' '         ; Control character?
+            jb      parseErr        ; yes: terminate with error
             call    ParseToken      ; parse command line token
             jc      parseErr        ; terminate if parse error
             mov     regbase, cx     ; save I/O address
             call    SkipBlanks      ; skip over trailing blanks
-            cmp     al, cr          ; Carriage return?
-            je      parseQuit       ; terminate with no error if cr
+            cmp     al, ' '         ; Control character?
+            jnb     parseErr        ; no: terminate with error
+            clc                     ; clear carry flag to report success
+            jmp     parseQuit       ; terminate
 parseErr:   stc                     ; set carry flag to report error
 parseQuit:  ret
 ParseCmdLn  endp
@@ -327,11 +326,11 @@ exe_start   endp
 regbase     dw      0000h
 
 dd_msg      db  'RTL8019AS Handy Dandy SRAM enabler. '
-            db  'Running from config.sys...', 0dh, 0ah, '$'
+            db  'Running from config.sys...', cr, lf, '$'
 exe_msg     db  'RTL8019AS Handy Dandy SRAM enabler. '
-            db  'Running from command prompt...', 0dh, 0ah, '$'
-usage_msg   db  'Usage: RLT2UMB.EXE IO_Address', 0dh, 0ah, '$'
+            db  'Running from command prompt...', cr, lf, '$'
+usage_msg   db  'Usage: RLT2UMB.EXE IO_Address', cr, lf, '$'
 cs_msg      db  'Write operations enabled for RTL8019AS @'
-cs_msg2     db  '$$$$h. Enjoy your RAM!', 0dh, 0ah, '$'
+cs_msg2     db  '$$$$h. Enjoy your RAM!', cr, lf, '$'
 
 end     exe_start
