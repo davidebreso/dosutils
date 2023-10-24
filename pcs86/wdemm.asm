@@ -5,7 +5,7 @@
 ;
 ;************************************************************************
 ;*                                                                      *
-;*      EMS 4.0 Driver for WD FE2011 chipset, rev.01, Sep-23            *
+;*      EMS 4.0 Driver for WD FE2011 chipset, rev.03, Oct-23            *
 ;*                                                                      *
 ;*      Based on the Lo-tech LTEMM EMS driver, rev.01, Mar-14           *
 ;*                                                                      *
@@ -61,7 +61,7 @@ alter_map_off   DW      0
 alter_map_seg   DW      0
 page_ptr        DW      alloc_page      ;allocate page buffer pointer.
 page_frame_seg  DW      0E000h          ;Default physical page frame address
-phys_pages      DW      DEF_PHYS_PAGES  ;Default physical page count
+phys_pages      DW      0               ;Default physical page count
 total_pages     DW      PAGE_MAX        ;total logical page count
 un_alloc_pages  DW      PAGE_MAX        ;unallocate logical page count
 handle_count    DW      0               ;EMM handle used count
@@ -70,20 +70,7 @@ jump_addr       DW      0               ;EMM function jump address data area
 ;       physical page status data area
 ;
 map_table       LABEL   phys_page_struct
-;                DB      SIZE phys_page_struct * MAX_PHYS_PAGES DUP (-1)
-;       <emm_handle2, phys_page_port, pyhs_seg_addr, log_page_data>
-                phys_page_struct <UNMAP, 0E000h, 0E000h, 0>
-                phys_page_struct <UNMAP, 0E001h, 0E400h, 0>
-                phys_page_struct <UNMAP, 0E002h, 0E800h, 0>
-                phys_page_struct <UNMAP, 0E003h, 0EC00h, 0>
-                phys_page_struct <UNMAP, 0C000h, 0C000h, 0>
-                phys_page_struct <UNMAP, 0C001h, 0C400h, 0>
-                phys_page_struct <UNMAP, 0C002h, 0C800h, 0>
-                phys_page_struct <UNMAP, 0C003h, 0CC00h, 0>
-                phys_page_struct <UNMAP, 0D000h, 0D000h, 0>
-                phys_page_struct <UNMAP, 0D001h, 0D400h, 0>
-                phys_page_struct <UNMAP, 0D002h, 0D800h, 0>
-                phys_page_struct <UNMAP, 0D003h, 0DC00h, 0>
+                DB      SIZE phys_page_struct * MAX_PHYS_PAGES DUP (-1)
 map_table_end   LABEL BYTE
 ;
 ;       handle status flag buffer pointers (handle)
@@ -1097,7 +1084,7 @@ func16:
 get_size_partial_map:
                 OR      BX,BX                   ;BX = 0?
                 JZ      get_size_partial_map1
-                CMP     BX,PHYS_PAGES           ;BX > physical page count?
+                CMP     BX,phys_pages           ;BX > physical page count?
                 JG      get_size_partial_map2
                 MOV     AX,SIZE phys_page_struct;get size of partial map array.
                 MUL     BL
@@ -2919,13 +2906,15 @@ emminit1:
                 CALL    strdsp
                 POPF                            ;restore getprm status
                 MOV     SI,OFFSET parmerr_msg   ;set error message
-                JC      errems2                 ;error?
+                JC      errprm                  ;getprm error?
+                CALL    settable                ;setup resident map table
+                jc      errems                  ;error ?
                 CALL    ckemsio                 ;check EMS i/o port
                 jc      errems                  ;error ?
                 CALL    ramchk                  ;check EMS memory
                 jc      errems                  ;error ?
                 CALL    instmsg                 ;display install message.
-;                JMP     dryrun                  ;DEBUG: do not install driver
+;;                JMP     dryrun                  ;DEBUG: do not install driver
                 XOR     AX,AX
                 MOV     ES,AX
                 MOV     SI,19CH
@@ -2960,7 +2949,7 @@ emminit2:
                 JMP     short emmint1
 errems:
                 MOV     SI,OFFSET notinst       ;set error message
-errems2:        CALL    strdsp                  ;display error message
+errprm:         CALL    strdsp                  ;display error message
 dryrun:         MOV     emm_flag,0              ;reset EMM install flag.
                 PUSH    CS
                 POP     ES
@@ -3013,7 +3002,7 @@ getpr15:        MOV     AL,ES:[DI]
                 CMP     AL,'Z'          ;larger than 'Z'?
                 JA      getpr18         ;yes, keep as is
                 OR      AL,20h          ;tolower
-getpr18:        CMP     AL,'s'          ;set page frame address?
+getpr18:        CMP     AL,'i'          ;include range?
                 JNZ     getpr3
                 INC     DI
                 MOV     AL,ES:[DI]
@@ -3024,48 +3013,34 @@ getpr16:        INC     DI
                 CALL    ascbin2         ;change data ascii -> binary.
                 JNC     getpr17         ;error ?
                 JMP     getprerr        ;yes, return error
-getpr17:        CMP     AX,0E000h       ;we need 4 contiguous pages
-                JNA     getpr19         ;for the page frame
-                JMP     getprerr        ;not enough pages, return error
-getpr19:        MOV     SI,OFFSET map_table     ;search map table entry
-                PUSH    ES                      ;save ES value
+getpr17:
+                MOV     low_range,AX    ;save low range segment
+                MOV     AL,ES:[DI]
+                CMP     AL,'-'          ;followed by '-' ?
+                JNE     getprerr        ;no, terminate with error
+                INC     DI
+                CALL    ascbin2         ;change data ascii -> binary
+                JC      getprerr        ;error ?
+                SUB     AX,03FFh        ;round to 16Kb pages
+                MOV     high_range,AX   ;save high range segment
+                MOV     SI,OFFSET temp_table    ;search transient table entry
                 PUSH    CX                      ;save CL value (sys.flags)
-                PUSH    DI
                 MOV     CX,MAX_PHYS_PAGES
-getpr11:        CMP     AX,[SI].phys_seg_addr
-                JE      getpr12                 ;table entry found?
-                ADD     SI,SIZE phys_page_struct
-                LOOP    getpr11
-                POP     DI                      ;entry not found
-                POP     CX                      ;restore registers
-                POP     ES                      ;and
-                JMP     getprerr                ;return with error
+
+getpr11:        MOV     AX,[SI].phys_seg_addr   ;check next table entry
+                CMP     AX,low_range
+                JB      getpr12                 ;smaller than range?
+                CMP     AX,high_range
+                JA      getpr8                  ;greater than range?
+                MOV     [SI].emm_handle2,UNMAP  ;in range, set available
 getpr12:
-                MOV     page_frame_seg,AX       ;save page frame segment
-                CMP     SI,OFFSET map_table
-                JE      getpr8                  ;rotate?
-                MOV     AX,DS
-                MOV     ES,AX                   ;now ES=DS
-                MOV     DI,OFFSET temp_table    ;ES:DI points to temp_table
-                PUSH    SI                      ;save initial source pointer
-                MOV     CX,OFFSET map_table_end
-                SUB     CX,SI                   ;number of bytes to copy
-                REP     MOVSB
-                MOV     SI,OFFSET map_table     ;reset source pointer
-                POP     CX
-                SUB     CX,OFFSET map_table     ;number of bytes to copy
-                REP     MOVSB
-                MOV     SI,offset temp_table
-                MOV     DI,offset map_table
-                MOV     CX,CONTEXT_SIZE/2       ;number of words to copy
-                REP     MOVSW
-getpr8:         POP     DI
-                POP     CX                      ;restore option flags
-                POP     ES                      ;restore ES
+                ADD     SI,SIZE phys_page_struct ;go to next entry
+                LOOP    getpr11
+getpr8:         POP     CX                      ;restore option flags
                 JMP     getpr2          ;continue without incrementing DI
 getpr3:
-                CMP     AL,'i'          ;set EMS i/o port address?
-                JNZ     getpr6
+                CMP     AL,'p'          ;set EMS i/o port address?
+                JNZ     getpr7
                 INC     DI
                 MOV     AL,ES:[DI]
                 CMP     AL,':'          ;followed by ':'?
@@ -3074,18 +3049,6 @@ getpr3:
                 CALL    ascbin2         ;change data ascii -> binary.
                 JC      getprerr        ;error ?
                 MOV     emsio_ofs,AX
-                JMP     getpr2          ;continue without incrementing DI
-getpr6:
-                CMP     AL,'p'          ;set pysical page number?
-                JNZ     getpr7
-                INC     DI
-                MOV     AL,ES:[DI]
-                CMP     AL,':'          ;followed by ':'?
-                JNZ     getprerr        ;no, return error
-                INC     DI
-                CALL    ascbin1         ;change data ascii -> binary.
-                JC      getprerr        ;error ?
-                MOV     phys_pages,ax
                 JMP     getpr2          ;continue without incrementing DI
 getpr7:
                 CMP     AL,'q'          ;set quiet mode
@@ -3103,7 +3066,7 @@ getpr13:
                 OR      CL,8
                 JMP     getpr5
 getpr10:
-                CMP     AL,'x'          ;set extended memory test
+                CMP     AL,'l'          ;set extended memory test
                 JNZ     getpr9
                 OR      CL,2
                 JMP     getpr5
@@ -3124,6 +3087,90 @@ getprquit:
                 POP     DS
                 RET
 getprm          ENDP
+;--------------------------------------------------------------------;
+; Copy map table from transient to resident area.
+;--------------------------------------------------------------------;
+settable        PROC    NEAR
+                PUSH    ES
+                PUSH    CX
+                PUSH    BX
+                PUSH    AX
+                PUSH    DI
+                PUSH    SI
+                MOV     phys_pages,0            ;zero num of pages
+                ;find standard page frame address
+                MOV     SI,OFFSET temp_table
+                MOV     BX,MAX_PHYS_PAGES
+settbl0:        XCHG    CX,BX                   ;restore remaining pages
+settbl1:
+                MOV     AX,[SI].phys_seg_addr   ;get page frame segment
+                CMP     [SI].emm_handle2,UNMAP  ;is page available?
+                JE      settbl2                 ;yes, set pageframe segment
+                ADD     SI,SIZE phys_page_struct ;go to next entry
+                LOOP    settbl1
+                STC                             ;no available pages
+                JMP     settblret               ;terminate with carry set
+settbl2:
+                MOV     AX,[SI].phys_seg_addr   ;get page frame segment
+                MOV     page_frame_seg,AX       ;save page frame segment
+                XCHG    BX,CX                   ;save remaining pages in BX
+                CMP     BX,3                    ;enough remaining pages?
+                JB      settbl4                 ;no,keep current frame sgmt
+                MOV     CX,3                    ;we need 3 continuous pages
+settbl3:        ADD     SI,SIZE phys_page_struct ;go to next entry
+                DEC     BX                      ;decrement remaining pages
+                CMP     [SI].emm_handle2,UNMAP  ;is available?
+                JNE     settbl0                 ;no, find next candidate
+                LOOP    settbl3                 ;yes, continue
+                ;Here we have set the default pageframe segment
+settbl4:
+                MOV     AX,DS
+                MOV     ES,AX                   ;now ES=DS
+                MOV     DI,OFFSET map_table     ;ES:DI points to map_table
+                MOV     SI,OFFSET temp_table    ;and DS:SI to temp_table
+settbl5:        MOV     AX,[SI].phys_seg_addr   ;get current page segment
+                CMP     AX,page_frame_seg       ;pageframe segment?
+                JE      settbl7                 ;yes, start copy
+                ADD     SI,SIZE phys_page_struct ;go to next entry
+                JMP     settbl5
+
+settbl6:        CMP     SI,OFFSET temp_table_end ;no more entries?
+                JNB     settbl8                 ;yes, exit from loop
+                CMP     [SI].emm_handle2,UNMAP  ;is current page available?
+                JE      settbl7                 ;yes, copy to resident table
+                ADD     SI,SIZE phys_page_struct ;no, skip
+                JMP     settbl6
+settbl7:        MOV     CX,SIZE phys_page_struct ;copy current page_struct
+                REP     MOVSB                   ;to map_table
+                INC     phys_pages              ;increment physical pages
+                JMP     settbl6                 ;go to next entry
+settbl8:
+                MOV     SI,OFFSET temp_table    ;DS:SI is start of temp_table
+settbl9:        MOV     AX,[SI].phys_seg_addr   ;search for pageframe segment
+                CMP     AX,page_frame_seg       ;pageframe segment?
+                JNB     settblok                ;yes, copy terminated
+                CMP     [SI].emm_handle2,UNMAP  ;is current page available?
+                JE      settbl10                ;yes, copy to resident table
+                ADD     SI,SIZE phys_page_struct ;no, skip
+                JMP     settbl9
+settbl10:       MOV     CX,SIZE phys_page_struct ;copy current page_struct
+                REP     MOVSB                   ;to map_table
+                INC     phys_pages              ;increment physical pages
+                JMP     settbl9                 ;go to next entry
+settblok:
+                TEST    sysflg,1                ;EMS 3.2 mode?
+                JZ      settbl11
+                MOV     phys_pages,4            ;yes, 4 physical pages
+settbl11:       CLC                             ;clear error flag
+settblret:
+                POP     SI
+                POP     DI
+                POP     AX
+                POP     BX
+                POP     CX
+                POP     ES
+                RET
+settable        ENDP
 ;--------------------------------------------------------------------
 ; Display EMM install opening message.
 ;--------------------------------------------------------------------
@@ -3659,22 +3706,37 @@ info_msg        db       CR,LF
 usage_msg       db       CR,LF
                 db      'Syntax:    DEVICE=WDEMM.EXE [/switches]',CR,LF
                 db       CR,LF
-                db      '  /s:nnnn - Page frame address(E000)',CR,LF
-                db      '  /i:nnn  - EMS i/o port base address(400)',CR,LF
-;                db      '  /h:nnn  - Maximal number of handles(64)',CR,LF
-;                db      '  /d:nn   - Depth of contest saves(5)',CR,LF
-                db      '  /p:nn   - Number of physical pages(4)',CR,LF
-                db      '  /n      - Bypass memory test',CR,LF
-                db      '  /x      - Perform long memory test',CR,LF
-                db      '  /3      - Use only EMS 3.2 functions',CR,LF
-                db      '  /q      - Quiet mode',CR,LF
-                db      '  /z      - No ticking noise',CR,LF
+                db      '  /I:xxxx-yyyy - Include range xxxx-yyyy into page frame',CR,LF
+                db      '  /X:xxxx-yyyy - Exclude range xxxx-yyyy from page frame',CR,LF
+                db      '  /S:nnnn      - Set standard page frame address(E000)',CR,LF
+                db      '  /P:nnn       - EMS i/o port base address(400)',CR,LF
+                db      '  /N           - Bypass memory test',CR,LF
+                db      '  /L           - Perform long memory test',CR,LF
+                db      '  /3           - Use only EMS 3.2 functions',CR,LF
+                db      '  /Q           - Quiet mode',CR,LF
+                db      '  /Z           - No ticking noise',CR,LF
                 db       CR,LF
                 db      'Defaults in parentheses.',CR,LF,'$'
 ;pageofs         DB      0               ;logical page no. offset data
+temp_table      LABEL   phys_page_struct
+;       <emm_handle2, phys_page_port, pyhs_seg_addr, log_page_data>
+                phys_page_struct <0, 0C000h, 0C000h, 0>
+                phys_page_struct <0, 0C001h, 0C400h, 0>
+                phys_page_struct <0, 0C002h, 0C800h, 0>
+                phys_page_struct <0, 0C003h, 0CC00h, 0>
+                phys_page_struct <0, 0D000h, 0D000h, 0>
+                phys_page_struct <0, 0D001h, 0D400h, 0>
+                phys_page_struct <0, 0D002h, 0D800h, 0>
+                phys_page_struct <0, 0D003h, 0DC00h, 0>
+                phys_page_struct <0, 0E000h, 0E000h, 0>
+                phys_page_struct <0, 0E001h, 0E400h, 0>
+                phys_page_struct <0, 0E002h, 0E800h, 0>
+                phys_page_struct <0, 0E003h, 0EC00h, 0>
+temp_table_end  LABEL   BYTE
 sysflg          DB      0               ;system option flag
 chkchr          DW      55AAH
-temp_table      DB      SIZE phys_page_struct * MAX_PHYS_PAGES DUP (-1)
+low_range       DW      0
+high_range      DW      0
 code            ENDS
 ;--------------------------------------------------------------------
 ;       Stack segment
