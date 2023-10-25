@@ -157,7 +157,7 @@ emmstat         ENDP
 ;
 emmint          PROC    FAR
                 PUSH    AX BX DS
-                INT     3               ;DEBUG breakpoint
+;;                INT     3               ;DEBUG breakpoint
                 LDS     BX,CS:ptrsav    ;Retrieve pointer to I/O Packet.
                 MOV     AL,[BX].cmd     ;Retrieve Command type. (1 => 16)
                 CMP     AL,10h          ;Verify that not more than 16 commands.
@@ -2906,11 +2906,13 @@ emminit1:
                 MOV     SI,OFFSET start_msg     ;display start messege.
                 CALL    strdsp
                 POPF                            ;restore getprm status
-                MOV     SI,OFFSET parmerr_msg   ;set error message
-                JC      errprm                  ;getprm error?
-                CALL    settable                ;setup resident map table
+                JNC     emminit3                ;getprm error?
+                MOV     SI,OFFSET parm_err      ;print error message
+                CALL    strdsp
+                JMP     errems                  ;return with error
+emminit3:       CALL    ckemsio                 ;check EMS i/o port
                 jc      errems                  ;error ?
-                CALL    ckemsio                 ;check EMS i/o port
+                CALL    settable                ;setup resident map table
                 jc      errems                  ;error ?
                 CALL    ramchk                  ;check EMS memory
                 jc      errems                  ;error ?
@@ -2950,7 +2952,7 @@ emminit2:
                 JMP     short emmint1
 errems:
                 MOV     SI,OFFSET notinst       ;set error message
-errprm:         CALL    strdsp                  ;display error message
+                CALL    strdsp                  ;display error message
 dryrun:         MOV     emm_flag,0              ;reset EMM install flag.
                 PUSH    CS
                 POP     ES
@@ -3117,8 +3119,9 @@ settable        PROC    NEAR
                 MOV     BX,MAX_PHYS_PAGES
 settbl0:        XCHG    CX,BX                   ;restore remaining pages
 settbl1:
+                CALL    ckifmap                 ;to be included?
                 MOV     AX,[SI].phys_seg_addr   ;get page frame segment
-                CMP     [SI].emm_handle2,UNMAP  ;is page available?
+                CMP     [SI].emm_handle2,UNMAP  ;included?
                 JE      settbl2                 ;yes, set pageframe segment
                 ADD     SI,SIZE phys_page_struct ;go to next entry
                 LOOP    settbl1
@@ -3133,6 +3136,7 @@ settbl2:
                 MOV     CX,3                    ;we need 3 continuous pages
 settbl3:        ADD     SI,SIZE phys_page_struct ;go to next entry
                 DEC     BX                      ;decrement remaining pages
+                CALL    ckifmap                 ;included?
                 CMP     [SI].emm_handle2,UNMAP  ;is available?
                 JNE     settbl0                 ;no, find next candidate
                 LOOP    settbl3                 ;yes, continue
@@ -3151,6 +3155,7 @@ settbl5:        MOV     AX,[SI].phys_seg_addr   ;get current page segment
 
 settbl6:        CMP     SI,OFFSET temp_table_end ;no more entries?
                 JNB     settbl8                 ;yes, exit from loop
+                CALL    ckifmap                 ;to be included?
                 CMP     [SI].emm_handle2,UNMAP  ;is current page available?
                 JE      settbl7                 ;yes, copy to resident table
                 ADD     SI,SIZE phys_page_struct ;no, skip
@@ -3164,6 +3169,7 @@ settbl8:
 settbl9:        MOV     AX,[SI].phys_seg_addr   ;search for pageframe segment
                 CMP     AX,page_frame_seg       ;pageframe segment?
                 JNB     settblok                ;yes, copy terminated
+                CALL    ckifmap                 ;to be included?
                 CMP     [SI].emm_handle2,UNMAP  ;is current page available?
                 JE      settbl10                ;yes, copy to resident table
                 ADD     SI,SIZE phys_page_struct ;no, skip
@@ -3186,6 +3192,55 @@ settblret:
                 POP     ES
                 RET
 settable        ENDP
+;--------------------------------------------------------------------
+; Test if physical page struct at SI should be included or not
+; Set emm_handle2 accordingly
+;--------------------------------------------------------------------
+ckifmap         PROC    NEAR
+                PUSH    AX
+                PUSH    BX
+                PUSH    DX
+                MOV     AX,[SI].phys_seg_addr   ;get page segment
+                MOV     DX,[SI].phys_page_port  ;get port address
+                MOV     BX,80h                  ;map to page 0
+                CMP     [SI].emm_handle2,AUTO   ;autodetect?
+                JNE     mapret                  ;no, leave as is
+                CALL    ckifram                 ;is RAM?
+                JZ      mapdis                  ;yes, disable
+                XCHG    AX,BX                   ;try to map phys page
+                OUT     DX,AL
+                XCHG    AX,BX                   ;page segment in AX
+                CALL    ckifram                 ;is RAM?
+                JNZ     mapdis                  ;no, disable page
+                MOV     [SI].emm_handle2,UNMAP  ;enable mapping
+                JMP     mapret
+mapdis:         MOV     [SI].emm_handle2,0      ;disable mapping
+mapret:         MOV     AL,DIS_EMS
+                OUT     DX,AL
+                POP     DX
+                POP     BX
+                POP     AX
+                RET
+ckifmap         ENDP
+;--------------------------------------------------------------------
+; Test if segment at AX is writable (RAM)
+; Set zero flag if writable.
+;--------------------------------------------------------------------
+ckifram         PROC NEAR
+                PUSH    DS AX BX
+                MOV     DS,AX                   ;DS points to phys page
+                MOV     AX,55AAh                ;write to first word
+                XCHG    AX,DS:0
+                MOV     BX,0AA55h
+                XCHG    BX,DS:2
+                CMP     DS:0,55AAh
+                MOV     DS:0,AX
+                JNZ     ckifret
+                CMP     DS:2,0AA55h
+ckifret:        MOV     DS:2,BX
+                POP     BX AX DS
+                RET
+ckifram         ENDP
 ;--------------------------------------------------------------------
 ; Display EMM install opening message.
 ;--------------------------------------------------------------------
@@ -3235,6 +3290,16 @@ ckemsio         PROC    NEAR
                 CMP     AL,255                  ;check TRS flag
                 JE      ckems3
 ckems4:
+                MOV     DI,OFFSET temp_table    ;scan temp_table
+                MOV     CX,MAX_PHYS_PAGES       ;scan all pages
+ckems5:
+                MOV     DX,[DI].phys_page_port  ;get base I/O address
+                ADD     DX,emsio_ofs            ;add I/O offset
+                MOV     [DI].phys_page_port,DX  ;save actual I/O port
+                MOV     AL,DIS_EMS              ;disable physical pages
+                OUT     DX,AL
+                ADD     DI,SIZE phys_page_struct
+                LOOP    ckems5
                 CLC                             ;reset CF
                 RET
 ckems3:
@@ -3253,16 +3318,6 @@ ramchk          PROC    NEAR
                 PUSH    AX BX CX DX BP
                 PUSH    CS
                 POP     DS
-                MOV     DI,OFFSET map_table
-                MOV     CX,MAX_PHYS_PAGES
-ramch14:
-                MOV     DX,[DI].phys_page_port  ;get base I/O address
-                ADD     DX,emsio_ofs            ;add I/O offset
-                MOV     [DI].phys_page_port,DX  ;save actual I/O port
-                MOV     AL,DIS_EMS              ;disable physical pages
-                OUT     DX,AL
-                ADD     DI,SIZE phys_page_struct
-                LOOP    ramch14
                 MOV     SI,OFFSET pagemsg       ;display page test msg..
                 CALL    strdsp
                 IN      AL,I8042+1              ;logical page test...
@@ -3272,12 +3327,8 @@ ramch14:
                 MOV     DI,OFFSET map_table
                 MOV     DX,[DI].phys_page_port  ;get I/O port of phys page 0
                 MOV     DI,OFFSET log_page
-;;                MOV     AL,pageofs              ;get EMS logical page start no.
                 xor     ax,ax
                 MOV     CX,PAGE_MAX
-                sub     cx,ax
-                jng     ramch16
-                mov     ah,al
                 XOR     BX,BX
 ramch9:
                 PUSH    CX
@@ -3735,10 +3786,10 @@ total_pg        DB      '0000 pages found on EMS board at '
 pioadr          DB      '0000',CR,LF
                 db      'Installation completed - '
 totmem          db      '0000K RAM Available.',CR,LF,LF,'$'
+parm_err        DB      'Invalid command line parameters.   ',CR,LF,'$'
 hard_w_err      DB      'No EMS board found.                ',CR,LF,'$'
 nopage_err      DB      'No EMS memory found.               ',CR,LF,'$'
 notinst         DB      'Installation failed - No EMS available.',CR,LF,LF,'$'
-parmerr_msg     DB      'Installation failed - Invalid command line parameters.',CR,LF,LF,'$'
 pagemsg         DB      '0000 Pages testing, Esc bypass test',CR,'$'
 tstpage         DB      '0000',CR,'$'
 info_msg        db       CR,LF
