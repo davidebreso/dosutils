@@ -61,7 +61,7 @@ alter_map_off   DW      0
 alter_map_seg   DW      0
 page_ptr        DW      alloc_page      ;allocate page buffer pointer.
 page_frame_seg  DW      0E000h          ;Default physical page frame address
-phys_pages      DW      0               ;Default physical page count
+phys_pages      DW      MAX_PHYS_PAGES  ;Default physical page count
 total_pages     DW      PAGE_MAX        ;total logical page count
 un_alloc_pages  DW      PAGE_MAX        ;unallocate logical page count
 handle_count    DW      0               ;EMM handle used count
@@ -157,6 +157,7 @@ emmstat         ENDP
 ;
 emmint          PROC    FAR
                 PUSH    AX BX DS
+                INT     3               ;DEBUG breakpoint
                 LDS     BX,CS:ptrsav    ;Retrieve pointer to I/O Packet.
                 MOV     AL,[BX].cmd     ;Retrieve Command type. (1 => 16)
                 CMP     AL,10h          ;Verify that not more than 16 commands.
@@ -3003,26 +3004,15 @@ getpr15:        MOV     AL,ES:[DI]
                 JA      getpr18         ;yes, keep as is
                 OR      AL,20h          ;tolower
 getpr18:        CMP     AL,'i'          ;include range?
-                JNZ     getpr3
+                JNZ     getpr4
                 INC     DI
-                MOV     AL,ES:[DI]
-                CMP     AL,':'          ;followed by ':'?
-                JZ      getpr16
-                JMP     getprerr        ;no, terminate with error
-getpr16:        INC     DI
-                CALL    ascbin2         ;change data ascii -> binary.
+                CALL    ascrange        ;change data ascii -> range.
                 JNC     getpr17         ;error ?
                 JMP     getprerr        ;yes, return error
 getpr17:
-                MOV     low_range,AX    ;save low range segment
-                MOV     AL,ES:[DI]
-                CMP     AL,'-'          ;followed by '-' ?
-                JNE     getprerr        ;no, terminate with error
-                INC     DI
-                CALL    ascbin2         ;change data ascii -> binary
-                JC      getprerr        ;error ?
-                SUB     AX,03FFh        ;round to 16Kb pages
-                MOV     high_range,AX   ;save high range segment
+                MOV     low_range,AX    ;save low range
+                SUB     BX,03FFh        ;round to 16Kb
+                MOV     high_range,BX   ;save high range
                 MOV     SI,OFFSET temp_table    ;search transient table entry
                 PUSH    CX                      ;save CL value (sys.flags)
                 MOV     CX,MAX_PHYS_PAGES
@@ -3037,6 +3027,31 @@ getpr12:
                 ADD     SI,SIZE phys_page_struct ;go to next entry
                 LOOP    getpr11
 getpr8:         POP     CX                      ;restore option flags
+                JMP     getpr2          ;continue without incrementing DI
+getpr4:
+                CMP     AL,'x'          ;exclude range?
+                JNZ     getpr3
+                INC     DI
+                CALL    ascrange
+                JNC     getpr6          ;error?
+                JMP     getprerr        ;yes, return error
+getpr6:         SUB     AX, 03FFh       ;round to low range to 16Kb pages
+                MOV     low_range,AX    ;save low range segment
+                MOV     high_range,BX   ;save high range segment
+                MOV     SI,OFFSET temp_table    ;search transient table entry
+                PUSH    CX                      ;save CL value (sys.flags)
+                MOV     CX,MAX_PHYS_PAGES
+
+getpr20:        MOV     AX,[SI].phys_seg_addr   ;check next table entry
+                CMP     AX,low_range
+                JB      getpr21                 ;smaller than range?
+                CMP     AX,high_range
+                JNB     getpr22                 ;greater than range?
+                MOV     [SI].emm_handle2,0      ;in range, exclude page
+getpr21:
+                ADD     SI,SIZE phys_page_struct ;go to next entry
+                LOOP    getpr20
+getpr22:        POP     CX                      ;restore option flags
                 JMP     getpr2          ;continue without incrementing DI
 getpr3:
                 CMP     AL,'p'          ;set EMS i/o port address?
@@ -3097,7 +3112,6 @@ settable        PROC    NEAR
                 PUSH    AX
                 PUSH    DI
                 PUSH    SI
-                MOV     phys_pages,0            ;zero num of pages
                 ;find standard page frame address
                 MOV     SI,OFFSET temp_table
                 MOV     BX,MAX_PHYS_PAGES
@@ -3124,6 +3138,7 @@ settbl3:        ADD     SI,SIZE phys_page_struct ;go to next entry
                 LOOP    settbl3                 ;yes, continue
                 ;Here we have set the default pageframe segment
 settbl4:
+                XOR     BX,BX                   ;initialize page count
                 MOV     AX,DS
                 MOV     ES,AX                   ;now ES=DS
                 MOV     DI,OFFSET map_table     ;ES:DI points to map_table
@@ -3142,7 +3157,7 @@ settbl6:        CMP     SI,OFFSET temp_table_end ;no more entries?
                 JMP     settbl6
 settbl7:        MOV     CX,SIZE phys_page_struct ;copy current page_struct
                 REP     MOVSB                   ;to map_table
-                INC     phys_pages              ;increment physical pages
+                INC     BX                      ;increment physical pages
                 JMP     settbl6                 ;go to next entry
 settbl8:
                 MOV     SI,OFFSET temp_table    ;DS:SI is start of temp_table
@@ -3155,12 +3170,12 @@ settbl9:        MOV     AX,[SI].phys_seg_addr   ;search for pageframe segment
                 JMP     settbl9
 settbl10:       MOV     CX,SIZE phys_page_struct ;copy current page_struct
                 REP     MOVSB                   ;to map_table
-                INC     phys_pages              ;increment physical pages
+                INC     BX                      ;increment physical pages
                 JMP     settbl9                 ;go to next entry
 settblok:
-                TEST    sysflg,1                ;EMS 3.2 mode?
-                JZ      settbl11
-                MOV     phys_pages,4            ;yes, 4 physical pages
+                CMP     BX,phys_pages           ;actual pages > max pages?
+                JNB     settbl11
+                MOV     phys_pages,BX           ;set physical pages
 settbl11:       CLC                             ;clear error flag
 settblret:
                 POP     SI
@@ -3619,6 +3634,33 @@ ascbin25:
                 POP     DX CX BX
                 RET
 ;--------------------------------------------------------------------
+; Change data ASCII (HEX) -> RANGE
+; input
+;       ES:DI = ascii data address (HEX)
+; output
+;       AX:BX = binary range
+;--------------------------------------------------------------------
+ascrange        PROC    NEAR
+                MOV     AL,ES:[DI]
+                CMP     AL,':'          ;start with ':'?
+                JZ      ascr1           ;yes, continue
+                STC
+                JMP     ascrret         ;no, terminate with error
+ascr1:          INC     DI
+                CALL    ascbin2         ;change hex -> binary
+                JC      ascrret         ;error?
+                XCHG    AX,BX           ;save low range in BX
+                MOV     AL,ES:[DI]
+                CMP     AL,'-'          ;followed by '-' ?
+                JNE     ascrret         ;no, terminate with error
+                INC     DI
+                CALL    ascbin2         ;change data ascii -> binary
+                JC      ascrret         ;error ?
+                XCHG    AX,BX           ;range is now in AX:BX
+                CLC                     ;return success
+ascrret:        RET
+ascrange        ENDP
+;--------------------------------------------------------------------
 ; STRINGS DISPLAY SUB
 ; input
 ;       DS:SI   : strings datas
@@ -3720,18 +3762,18 @@ usage_msg       db       CR,LF
 ;pageofs         DB      0               ;logical page no. offset data
 temp_table      LABEL   phys_page_struct
 ;       <emm_handle2, phys_page_port, pyhs_seg_addr, log_page_data>
-                phys_page_struct <0, 0C000h, 0C000h, 0>
-                phys_page_struct <0, 0C001h, 0C400h, 0>
-                phys_page_struct <0, 0C002h, 0C800h, 0>
-                phys_page_struct <0, 0C003h, 0CC00h, 0>
-                phys_page_struct <0, 0D000h, 0D000h, 0>
-                phys_page_struct <0, 0D001h, 0D400h, 0>
-                phys_page_struct <0, 0D002h, 0D800h, 0>
-                phys_page_struct <0, 0D003h, 0DC00h, 0>
-                phys_page_struct <0, 0E000h, 0E000h, 0>
-                phys_page_struct <0, 0E001h, 0E400h, 0>
-                phys_page_struct <0, 0E002h, 0E800h, 0>
-                phys_page_struct <0, 0E003h, 0EC00h, 0>
+                phys_page_struct <AUTO, 0C000h, 0C000h, 0>
+                phys_page_struct <AUTO, 0C001h, 0C400h, 0>
+                phys_page_struct <AUTO, 0C002h, 0C800h, 0>
+                phys_page_struct <AUTO, 0C003h, 0CC00h, 0>
+                phys_page_struct <AUTO, 0D000h, 0D000h, 0>
+                phys_page_struct <AUTO, 0D001h, 0D400h, 0>
+                phys_page_struct <AUTO, 0D002h, 0D800h, 0>
+                phys_page_struct <AUTO, 0D003h, 0DC00h, 0>
+                phys_page_struct <AUTO, 0E000h, 0E000h, 0>
+                phys_page_struct <AUTO, 0E001h, 0E400h, 0>
+                phys_page_struct <AUTO, 0E002h, 0E800h, 0>
+                phys_page_struct <AUTO, 0E003h, 0EC00h, 0>
 temp_table_end  LABEL   BYTE
 sysflg          DB      0               ;system option flag
 chkchr          DW      55AAH
