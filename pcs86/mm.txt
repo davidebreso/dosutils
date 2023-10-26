@@ -1,0 +1,14 @@
+Command line switches for MM.SYS:
+        /F      Verbose mode
+        /E      Strict EMS mode, only one 64k window
+        /X=xxxx-yyyy    Exclude segments xxxx-yyyy from mapping
+        /H=nnn  Allow a max of nnn hadles (default 255)
+        /C=mmm  Allow max mmm contexts (default 255)
+        /D=h    Set context depth to h (default 1)
+        /A=xx   Set base EMS I/O address to xx0 (default 400)
+        /Z      Skip memory test
+        /T      Force memory test
+        /V      ???
+        /N      ???
+        /S=xxxx Set stardard page frame segement
+        /I=xxxx-yyyy    Include segments xxxx-yyyy in mapping
