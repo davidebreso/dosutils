@@ -2,6 +2,7 @@
                 NAME    WDEMM
                 include WDEMM.MAC       ; macros
                 include WDEMM.INC       ; structures
+                .8086                   ; only 8086 instructions
 ;
 ;************************************************************************
 ;*                                                                      *
@@ -28,7 +29,6 @@
 ;*      No charge has been made for this software.                      *
 ;*                                                                      *
 ;************************************************************************
-
 code            SEGMENT
                 ASSUME  CS:code
 
@@ -60,7 +60,7 @@ alter_map       LABEL   DWORD
 alter_map_off   DW      0
 alter_map_seg   DW      0
 page_ptr        DW      alloc_page      ;allocate page buffer pointer.
-page_frame_seg  DW      0E000h          ;Default physical page frame address
+page_frame_seg  DW      0000h           ;Default physical page frame address
 phys_pages      DW      MAX_PHYS_PAGES  ;Default physical page count
 total_pages     DW      PAGE_MAX        ;total logical page count
 un_alloc_pages  DW      PAGE_MAX        ;unallocate logical page count
@@ -2906,14 +2906,11 @@ emminit1:
                 MOV     SI,OFFSET start_msg     ;display start messege.
                 CALL    strdsp
                 POPF                            ;restore getprm status
-                JNC     emminit3                ;getprm error?
-                MOV     SI,OFFSET parm_err      ;print error message
-                CALL    strdsp
-                JMP     errems                  ;return with error
-emminit3:       CALL    ckemsio                 ;check EMS i/o port
-                jc      errems                  ;error ?
+                JC      errparm                 ;getprm error?
+                CALL    ckemsio                 ;check EMS i/o port
+                JC      errems                  ;error ?
                 CALL    settable                ;setup resident map table
-                jc      errems                  ;error ?
+                JC      errparm                 ;error ?
                 CALL    ramchk                  ;check EMS memory
                 jc      errems                  ;error ?
                 CALL    instmsg                 ;display install message.
@@ -2950,6 +2947,9 @@ emminit2:
                 MOV     [BX].brkoff,0           ;break address offset set.
                 MOV     [BX].brkseg,AX          ;break address segment set.
                 JMP     short emmint1
+errparm:
+                MOV     SI,OFFSET parm_err      ;print error message
+                CALL    strdsp
 errems:
                 MOV     SI,OFFSET notinst       ;set error message
                 CALL    strdsp                  ;display error message
@@ -3032,7 +3032,7 @@ getpr8:         POP     CX                      ;restore option flags
                 JMP     getpr2          ;continue without incrementing DI
 getpr4:
                 CMP     AL,'x'          ;exclude range?
-                JNZ     getpr3
+                JNZ     getpr16
                 INC     DI
                 CALL    ascrange
                 JNC     getpr6          ;error?
@@ -3054,6 +3054,18 @@ getpr21:
                 ADD     SI,SIZE phys_page_struct ;go to next entry
                 LOOP    getpr20
 getpr22:        POP     CX                      ;restore option flags
+                JMP     getpr2          ;continue without incrementing DI
+getpr16:
+                CMP     AL,'s'          ;set page frame segment?
+                JNZ     getpr3
+                INC     DI
+                MOV     AL,ES:[DI]
+                CMP     AL,':'          ;followed by ':'?
+                JNZ     getprerr        ;no, return error
+                INC     DI
+                CALL    ascbin2         ;change data ascii -> binary.
+                JC      getprerr        ;error ?
+                MOV     page_frame_seg,AX ;save page frame segment
                 JMP     getpr2          ;continue without incrementing DI
 getpr3:
                 CMP     AL,'p'          ;set EMS i/o port address?
@@ -3118,6 +3130,8 @@ settable        PROC    NEAR
                 MOV     SI,OFFSET temp_table
                 MOV     BX,MAX_PHYS_PAGES
 settbl0:        XCHG    CX,BX                   ;restore remaining pages
+                CMP     page_frame_seg,0        ;search for frame segment?
+                JNE     settbl4                 ;no, segment already set
 settbl1:
                 CALL    ckifmap                 ;to be included?
                 MOV     AX,[SI].phys_seg_addr   ;get page frame segment
@@ -3147,12 +3161,18 @@ settbl4:
                 MOV     ES,AX                   ;now ES=DS
                 MOV     DI,OFFSET map_table     ;ES:DI points to map_table
                 MOV     SI,OFFSET temp_table    ;and DS:SI to temp_table
+                MOV     CX,MAX_PHYS_PAGES
 settbl5:        MOV     AX,[SI].phys_seg_addr   ;get current page segment
                 CMP     AX,page_frame_seg       ;pageframe segment?
+                JNE     settbl12                ;no, go to next entry
+                CALL    ckifmap                 ;is mapped?
+                CMP     [SI].emm_handle2,UNMAP
                 JE      settbl7                 ;yes, start copy
-                ADD     SI,SIZE phys_page_struct ;go to next entry
-                JMP     settbl5
-
+                JMP     settbl13                ;no, return with error
+settbl12:       ADD     SI,SIZE phys_page_struct ;go to next entry
+                LOOP    settbl5
+settbl13:       STC                             ;pageframe not found
+                JMP     settblret               ;return with error
 settbl6:        CMP     SI,OFFSET temp_table_end ;no more entries?
                 JNB     settbl8                 ;yes, exit from loop
                 CALL    ckifmap                 ;to be included?
@@ -3279,30 +3299,32 @@ instmsg         ENDP
 ckemsio         PROC    NEAR
                 MOV     AL, 0DAh        ; enable config mode
                 OUT     6Ch, AL
+                MOV     AX,emsio_ofs
+                MOV     CL, 4
+                SHR     AX, CL
+                OUT     70h, AL         ; set EMS I/O base address
                 IN      AL, 6Fh         ; set bit 3 of register 6Fh to 1
                 OR      AL, 8
                 OUT     6Fh, AL
-                XOR     AL, AL          ; disable config mode
-                OUT     6Ch, AL
-                MOV     DX, CS:emsio_ofs
-                ADD     DX, CS:page_frame_seg
-                IN      AL,DX
-                CMP     AL,255                  ;check TRS flag
-                JE      ckems3
-ckems4:
+                XOR     AL,AL           ;disable config mode
+                OUT     6Ch,AL
                 MOV     DI,OFFSET temp_table    ;scan temp_table
                 MOV     CX,MAX_PHYS_PAGES       ;scan all pages
-ckems5:
+ckems1:
                 MOV     DX,[DI].phys_page_port  ;get base I/O address
-                ADD     DX,emsio_ofs            ;add I/O offset
+                OR      DX,emsio_ofs            ;add I/O offset
                 MOV     [DI].phys_page_port,DX  ;save actual I/O port
                 MOV     AL,DIS_EMS              ;disable physical pages
                 OUT     DX,AL
+                NEG     AL
+                IN      AL,DX                   ;read I/O port
+                CMP     AL,DIS_EMS              ;read correct?
+                JNE     ckems2                  ;no, return error
                 ADD     DI,SIZE phys_page_struct
-                LOOP    ckems5
-                CLC                             ;reset CF
+                LOOP    ckems1
+                CLC
                 RET
-ckems3:
+ckems2:
                 MOV     SI,OFFSET hard_w_err    ;display hardware error messege.
                 CALL    strdsp
                 STC                             ;set CF
@@ -3802,7 +3824,7 @@ usage_msg       db       CR,LF
                 db      '  /I:xxxx-yyyy - Include range xxxx-yyyy into page frame',CR,LF
                 db      '  /X:xxxx-yyyy - Exclude range xxxx-yyyy from page frame',CR,LF
                 db      '  /S:nnnn      - Set standard page frame address(E000)',CR,LF
-                db      '  /P:nnn       - EMS i/o port base address(400)',CR,LF
+                db      '  /P:nnn       - Set EMS I/O port base address(400)',CR,LF
                 db      '  /N           - Bypass memory test',CR,LF
                 db      '  /L           - Perform long memory test',CR,LF
                 db      '  /3           - Use only EMS 3.2 functions',CR,LF
