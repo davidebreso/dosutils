@@ -2,7 +2,7 @@
                 NAME    WDEMM
                 include WDEMM.MAC       ; macros
                 include WDEMM.INC       ; structures
-                .8086                   ; only 8086 instructions
+                .8086                   ; 8086 instructions only
 ;
 ;************************************************************************
 ;*                                                                      *
@@ -2910,7 +2910,7 @@ emminit1:
                 CALL    ckemsio                 ;check EMS i/o port
                 JC      errems                  ;error ?
                 CALL    settable                ;setup resident map table
-                JC      errparm                 ;error ?
+                JC      errems                  ;error ?
                 CALL    ramchk                  ;check EMS memory
                 jc      errems                  ;error ?
                 CALL    instmsg                 ;display install message.
@@ -3021,7 +3021,7 @@ getpr17:
 
 getpr11:        MOV     AX,[SI].phys_seg_addr   ;check next table entry
                 CMP     AX,low_range
-                JB      getpr12                 ;smaller than range?
+                JB      getpr12                 ;smaller than low range?
                 CMP     AX,high_range
                 JA      getpr8                  ;greater than range?
                 MOV     [SI].emm_handle2,UNMAP  ;in range, set available
@@ -3037,7 +3037,7 @@ getpr4:
                 CALL    ascrange
                 JNC     getpr6          ;error?
                 JMP     getprerr        ;yes, return error
-getpr6:         SUB     AX, 03FFh       ;round to low range to 16Kb pages
+getpr6:         SUB     AX, 03FFh       ;round low range to 16Kb pages
                 MOV     low_range,AX    ;save low range segment
                 MOV     high_range,BX   ;save high range segment
                 MOV     SI,OFFSET temp_table    ;search transient table entry
@@ -3126,21 +3126,22 @@ settable        PROC    NEAR
                 PUSH    AX
                 PUSH    DI
                 PUSH    SI
+;;                INT     3                       ;debug breakpoint
+                ;scan upper memory for physical pages
+                CALL    scanmem
                 ;find standard page frame address
                 MOV     SI,OFFSET temp_table
                 MOV     BX,MAX_PHYS_PAGES
-settbl0:        XCHG    CX,BX                   ;restore remaining pages
                 CMP     page_frame_seg,0        ;search for frame segment?
                 JNE     settbl4                 ;no, segment already set
+settbl0:        XCHG    CX,BX                   ;restore remaining pages
 settbl1:
-                CALL    ckifmap                 ;to be included?
                 MOV     AX,[SI].phys_seg_addr   ;get page frame segment
                 CMP     [SI].emm_handle2,UNMAP  ;included?
                 JE      settbl2                 ;yes, set pageframe segment
                 ADD     SI,SIZE phys_page_struct ;go to next entry
                 LOOP    settbl1
-                STC                             ;no available pages
-                JMP     settblret               ;terminate with carry set
+                JMP     settblerr               ;terminate with error
 settbl2:
                 MOV     AX,[SI].phys_seg_addr   ;get page frame segment
                 MOV     page_frame_seg,AX       ;save page frame segment
@@ -3150,7 +3151,6 @@ settbl2:
                 MOV     CX,3                    ;we need 3 continuous pages
 settbl3:        ADD     SI,SIZE phys_page_struct ;go to next entry
                 DEC     BX                      ;decrement remaining pages
-                CALL    ckifmap                 ;included?
                 CMP     [SI].emm_handle2,UNMAP  ;is available?
                 JNE     settbl0                 ;no, find next candidate
                 LOOP    settbl3                 ;yes, continue
@@ -3165,17 +3165,15 @@ settbl4:
 settbl5:        MOV     AX,[SI].phys_seg_addr   ;get current page segment
                 CMP     AX,page_frame_seg       ;pageframe segment?
                 JNE     settbl12                ;no, go to next entry
-                CALL    ckifmap                 ;is mapped?
                 CMP     [SI].emm_handle2,UNMAP
                 JE      settbl7                 ;yes, start copy
                 JMP     settbl13                ;no, return with error
 settbl12:       ADD     SI,SIZE phys_page_struct ;go to next entry
                 LOOP    settbl5
-settbl13:       STC                             ;pageframe not found
-                JMP     settblret               ;return with error
+settbl13:                                       ;pageframe not found
+                JMP     settblerr               ;return with error
 settbl6:        CMP     SI,OFFSET temp_table_end ;no more entries?
                 JNB     settbl8                 ;yes, exit from loop
-                CALL    ckifmap                 ;to be included?
                 CMP     [SI].emm_handle2,UNMAP  ;is current page available?
                 JE      settbl7                 ;yes, copy to resident table
                 ADD     SI,SIZE phys_page_struct ;no, skip
@@ -3189,7 +3187,6 @@ settbl8:
 settbl9:        MOV     AX,[SI].phys_seg_addr   ;search for pageframe segment
                 CMP     AX,page_frame_seg       ;pageframe segment?
                 JNB     settblok                ;yes, copy terminated
-                CALL    ckifmap                 ;to be included?
                 CMP     [SI].emm_handle2,UNMAP  ;is current page available?
                 JE      settbl10                ;yes, copy to resident table
                 ADD     SI,SIZE phys_page_struct ;no, skip
@@ -3199,10 +3196,15 @@ settbl10:       MOV     CX,SIZE phys_page_struct ;copy current page_struct
                 INC     BX                      ;increment physical pages
                 JMP     settbl9                 ;go to next entry
 settblok:
-                CMP     BX,phys_pages           ;actual pages > max pages?
-                JNB     settbl11
+                CMP     BX,phys_pages           ;actual pages <= max pages?
+                JNB     settblret               ;yes, return with no carry
                 MOV     phys_pages,BX           ;set physical pages
-settbl11:       CLC                             ;clear error flag
+                CLC                             ;clear error flag
+                JMP     settblret               ;return with no error
+settblerr:
+                MOV     SI,OFFSET table_err     ;print error message
+                CALL    strdsp
+                STC                             ;set error flag
 settblret:
                 POP     SI
                 POP     DI
@@ -3213,52 +3215,76 @@ settblret:
                 RET
 settable        ENDP
 ;--------------------------------------------------------------------
-; Test if physical page struct at SI should be included or not
+; Scan upper memory to determine which physical pages are included
 ; Set emm_handle2 accordingly
 ;--------------------------------------------------------------------
-ckifmap         PROC    NEAR
-                PUSH    AX
-                PUSH    BX
-                PUSH    DX
-                MOV     AX,[SI].phys_seg_addr   ;get page segment
-                MOV     DX,[SI].phys_page_port  ;get port address
-                MOV     BX,80h                  ;map to page 0
+scanmem         PROC    NEAR
+                PUSH    ES
+                MOV     SI,OFFSET temp_table    ;SI point to table
+                XOR     BX,BX                   ;disable range upper bound
+                MOV     AX,[SI].phys_seg_addr   ;get phys page segment
+scanmem1:
+                CMP     AX,0F000h               ;out of memory range?
+                JNB     scanmret                ;yes, return
+                CMP     AX,BX                   ;in disable range?
+                JB      scanmem3                ;yes, disable page
+                MOV     ES,AX                   ;ES -> current 2k block
+                CMP     ES:0,0AA55h             ;is option ROM?
+                JNE     scanmem2                ;no, check if RAM
+                MOV     BL,ES:2                 ;ROM size divided by 512
+                XOR     BH,BH                   ;extend to 16 bit
+                MOV     CL,5                    ;multiply by 32 to get..
+                SHL     BX,CL                   ;..ROM size in paragraph
+                ADD     BX,AX                   ;disable up to current+size
+scanmem3:       CMP     [SI].emm_handle2,AUTO   ;autodetect?
+                JNE     scanmem4                ;no, leave as is
+                MOV     [SI].emm_handle2,0      ;disable physical page
+                JMP     scanmem4                ;go to next block
+scanmem2:
                 CMP     [SI].emm_handle2,AUTO   ;autodetect?
-                JNE     mapret                  ;no, leave as is
+                JNE     scanmem4                ;no, go to next block
                 CALL    ckifram                 ;is RAM?
-                JZ      mapdis                  ;yes, disable
-                XCHG    AX,BX                   ;try to map phys page
+                JNZ     scanmem4                ;no, go to next block
+                MOV     [SI].emm_handle2,0      ;disable page
+scanmem4:       ADD     AX,080h                 ;go to next 2K block
+                TEST    AX,03FFh                ;next physical page?
+                JNZ     scanmem1                ;no, loop back
+                ;current physical page is free from RAM and ROM
+                CMP     [SI].emm_handle2,AUTO   ;autodetect?
+                JNE     scanmem7                ;no, leave as is
+                MOV     DX,[SI].phys_page_port  ;get port address
+                MOV     AL,80h                  ;try to map logical page 0
                 OUT     DX,AL
-                XCHG    AX,BX                   ;page segment in AX
-                CALL    ckifram                 ;is RAM?
-                JNZ     mapdis                  ;no, disable page
-                MOV     [SI].emm_handle2,UNMAP  ;enable mapping
-                JMP     mapret
-mapdis:         MOV     [SI].emm_handle2,0      ;disable mapping
-mapret:         MOV     AL,DIS_EMS
+                CALL    ckifram                 ;check if RAM
+                MOV     AL,DIS_EMS              ;disable logical mapping
                 OUT     DX,AL
-                POP     DX
-                POP     BX
-                POP     AX
+                JNZ     scanmem6                ;not RAM, disable phys page
+                MOV     [SI].emm_handle2,UNMAP   ;include physical page
+                JMP     scanmem7
+scanmem6:       MOV     [SI].emm_handle2,0      ;disable physical page
+scanmem7:       ADD     SI,SIZE phys_page_struct ;go to next table entry
+                MOV     AX,[SI].phys_seg_addr   ;get page segment
+                JMP     scanmem1                ;loop back
+scanmret:
+                POP     ES
                 RET
-ckifmap         ENDP
+scanmem         ENDP
 ;--------------------------------------------------------------------
-; Test if segment at AX is writable (RAM)
+; Test if segment at ES is writable (RAM)
 ; Set zero flag if writable.
 ;--------------------------------------------------------------------
 ckifram         PROC NEAR
-                PUSH    DS AX BX
-                MOV     DS,AX                   ;DS points to phys page
+                PUSH    AX BX
                 MOV     AX,55AAh                ;write to first word
-                XCHG    AX,DS:0
+                XCHG    AX,ES:0
                 MOV     BX,0AA55h
-                XCHG    BX,DS:2
-                CMP     DS:0,55AAh
-                MOV     DS:0,AX
+                XCHG    BX,ES:2
+                CMP     ES:0,55AAh
+                MOV     ES:0,AX
                 JNZ     ckifret
-                CMP     DS:2,0AA55h
-ckifret:        MOV     DS:2,BX
-                POP     BX AX DS
+                CMP     ES:2,0AA55h
+ckifret:        MOV     ES:2,BX
+                POP     BX AX
                 RET
 ckifram         ENDP
 ;--------------------------------------------------------------------
@@ -3811,6 +3837,7 @@ totmem          db      '0000K RAM Available.',CR,LF,LF,'$'
 parm_err        DB      'Invalid command line parameters.   ',CR,LF,'$'
 hard_w_err      DB      'No EMS board found.                ',CR,LF,'$'
 nopage_err      DB      'No EMS memory found.               ',CR,LF,'$'
+table_err       DB      'Invalid EMS page frame.            ',CR,LF,'$'
 notinst         DB      'Installation failed - No EMS available.',CR,LF,LF,'$'
 pagemsg         DB      '0000 Pages testing, Esc bypass test',CR,'$'
 tstpage         DB      '0000',CR,'$'
@@ -3823,11 +3850,11 @@ usage_msg       db       CR,LF
                 db       CR,LF
                 db      '  /I:xxxx-yyyy - Include range xxxx-yyyy into page frame',CR,LF
                 db      '  /X:xxxx-yyyy - Exclude range xxxx-yyyy from page frame',CR,LF
-                db      '  /S:nnnn      - Set standard page frame address(E000)',CR,LF
+                db      '  /S:nnnn      - Set standard page frame address',CR,LF
                 db      '  /P:nnn       - Set EMS I/O port base address(400)',CR,LF
+                db      '  /3           - Use only EMS 3.2 functions',CR,LF
                 db      '  /N           - Bypass memory test',CR,LF
                 db      '  /L           - Perform long memory test',CR,LF
-                db      '  /3           - Use only EMS 3.2 functions',CR,LF
                 db      '  /Q           - Quiet mode',CR,LF
                 db      '  /Z           - No ticking noise',CR,LF
                 db       CR,LF
