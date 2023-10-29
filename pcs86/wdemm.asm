@@ -3275,6 +3275,8 @@ scanmem         ENDP
 ;--------------------------------------------------------------------
 ckifram         PROC NEAR
                 PUSH    AX BX
+                CLI                     ;disable interrups while we
+                                        ; mess with memory
                 MOV     AX,55AAh        ;swap 55AAh with
                 XCHG    AX,ES:0         ; first word of segment
                 MOV     BX,0AA55h       ;swap AA55h with
@@ -3284,6 +3286,7 @@ ckifram         PROC NEAR
                 JNZ     ckifret         ;no swap, segment not writable
                 CMP     ES:2,0AA55h     ;second word swap ok?
 ckifret:        MOV     ES:2,BX         ;restore second word
+                STI                     ;enable interrupts
                 POP     BX AX
                 RET
 ckifram         ENDP
