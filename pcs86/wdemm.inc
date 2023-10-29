@@ -93,9 +93,11 @@ TAB                     EQU     09H     ;TAB code
 DIS_EMS                 EQU     0       ;physical page disable data
 ; DIS_EMS                 EQU     0FFH    ;physical page disable data (lo-tech cards)
 HANDLE_NAME_SIZE        EQU     8       ;EMM handle name byte size
-AUTO                    EQU     000FFH  ;automatic mapping code
 UNMAP                   EQU     0FFFFH  ;unmap code
 UNALLOC                 EQU     0FFFFH  ;unallocate code
+AUTO                    EQU     000FFH  ;autodetect mapping code
+INCL                    EQU     0FFFFH  ;force include phys page
+EXCL                    EQU     00000H  ;force exclude phys page
 PUSH_REG                EQU     8 * 2   ;push register size
 EMMWORK                 EQU     128     ;EMM driver work area size
 RET_SP                  EQU     EMMWORK+PUSH_REG+6+10   ;int67 stack size

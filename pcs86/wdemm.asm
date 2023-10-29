@@ -3024,7 +3024,7 @@ getpr11:        MOV     AX,[SI].phys_seg_addr   ;check next table entry
                 JB      getpr12                 ;smaller than low range?
                 CMP     AX,high_range
                 JA      getpr8                  ;greater than range?
-                MOV     [SI].emm_handle2,UNMAP  ;in range, set available
+                MOV     [SI].emm_handle2,INCL  ;in range, set available
 getpr12:
                 ADD     SI,SIZE phys_page_struct ;go to next entry
                 LOOP    getpr11
@@ -3049,7 +3049,7 @@ getpr20:        MOV     AX,[SI].phys_seg_addr   ;check next table entry
                 JB      getpr21                 ;smaller than range?
                 CMP     AX,high_range
                 JNB     getpr22                 ;greater than range?
-                MOV     [SI].emm_handle2,0      ;in range, exclude page
+                MOV     [SI].emm_handle2,EXCL   ;in range, exclude page
 getpr21:
                 ADD     SI,SIZE phys_page_struct ;go to next entry
                 LOOP    getpr20
@@ -3137,7 +3137,7 @@ settable        PROC    NEAR
 settbl0:        XCHG    CX,BX                   ;restore remaining pages
 settbl1:
                 MOV     AX,[SI].phys_seg_addr   ;get page frame segment
-                CMP     [SI].emm_handle2,UNMAP  ;included?
+                CMP     [SI].emm_handle2,INCL   ;included?
                 JE      settbl2                 ;yes, set pageframe segment
                 ADD     SI,SIZE phys_page_struct ;go to next entry
                 LOOP    settbl1
@@ -3151,7 +3151,7 @@ settbl2:
                 MOV     CX,3                    ;we need 3 continuous pages
 settbl3:        ADD     SI,SIZE phys_page_struct ;go to next entry
                 DEC     BX                      ;decrement remaining pages
-                CMP     [SI].emm_handle2,UNMAP  ;is available?
+                CMP     [SI].emm_handle2,INCL   ;is available?
                 JNE     settbl0                 ;no, find next candidate
                 LOOP    settbl3                 ;yes, continue
                 ;Here we have set the default pageframe segment
@@ -3165,7 +3165,7 @@ settbl4:
 settbl5:        MOV     AX,[SI].phys_seg_addr   ;get current page segment
                 CMP     AX,page_frame_seg       ;pageframe segment?
                 JNE     settbl12                ;no, go to next entry
-                CMP     [SI].emm_handle2,UNMAP
+                CMP     [SI].emm_handle2,INCL   ;is current page available?
                 JE      settbl7                 ;yes, start copy
                 JMP     settbl13                ;no, return with error
 settbl12:       ADD     SI,SIZE phys_page_struct ;go to next entry
@@ -3174,7 +3174,7 @@ settbl13:                                       ;pageframe not found
                 JMP     settblerr               ;return with error
 settbl6:        CMP     SI,OFFSET temp_table_end ;no more entries?
                 JNB     settbl8                 ;yes, exit from loop
-                CMP     [SI].emm_handle2,UNMAP  ;is current page available?
+                CMP     [SI].emm_handle2,INCL   ;is current page available?
                 JE      settbl7                 ;yes, copy to resident table
                 ADD     SI,SIZE phys_page_struct ;no, skip
                 JMP     settbl6
@@ -3187,7 +3187,7 @@ settbl8:
 settbl9:        MOV     AX,[SI].phys_seg_addr   ;search for pageframe segment
                 CMP     AX,page_frame_seg       ;pageframe segment?
                 JNB     settblok                ;yes, copy terminated
-                CMP     [SI].emm_handle2,UNMAP  ;is current page available?
+                CMP     [SI].emm_handle2,INCL   ;is current page available?
                 JE      settbl10                ;yes, copy to resident table
                 ADD     SI,SIZE phys_page_struct ;no, skip
                 JMP     settbl9
@@ -3196,9 +3196,9 @@ settbl10:       MOV     CX,SIZE phys_page_struct ;copy current page_struct
                 INC     BX                      ;increment physical pages
                 JMP     settbl9                 ;go to next entry
 settblok:
-                CMP     BX,phys_pages           ;actual pages <= max pages?
-                JNB     settblret               ;yes, return with no carry
-                MOV     phys_pages,BX           ;set physical pages
+                CMP     BX,phys_pages           ;actual pages >= max pages?
+                JNB     settblret               ;yes, return with no change
+                MOV     phys_pages,BX           ;no, set physical pages
                 CLC                             ;clear error flag
                 JMP     settblret               ;return with no error
 settblerr:
@@ -3238,14 +3238,14 @@ scanmem1:
                 ADD     BX,AX                   ;disable up to current+size
 scanmem3:       CMP     [SI].emm_handle2,AUTO   ;autodetect?
                 JNE     scanmem4                ;no, leave as is
-                MOV     [SI].emm_handle2,0      ;disable physical page
+                MOV     [SI].emm_handle2,EXCL   ;disable physical page
                 JMP     scanmem4                ;go to next block
 scanmem2:
                 CMP     [SI].emm_handle2,AUTO   ;autodetect?
                 JNE     scanmem4                ;no, go to next block
                 CALL    ckifram                 ;is RAM?
                 JNZ     scanmem4                ;no, go to next block
-                MOV     [SI].emm_handle2,0      ;disable page
+                MOV     [SI].emm_handle2,EXCL   ;disable page
 scanmem4:       ADD     AX,080h                 ;go to next 2K block
                 TEST    AX,03FFh                ;next physical page?
                 JNZ     scanmem1                ;no, loop back
@@ -3259,9 +3259,9 @@ scanmem4:       ADD     AX,080h                 ;go to next 2K block
                 MOV     AL,DIS_EMS              ;disable logical mapping
                 OUT     DX,AL
                 JNZ     scanmem6                ;not RAM, disable phys page
-                MOV     [SI].emm_handle2,UNMAP   ;include physical page
+                MOV     [SI].emm_handle2,INCL   ;include physical page
                 JMP     scanmem7
-scanmem6:       MOV     [SI].emm_handle2,0      ;disable physical page
+scanmem6:       MOV     [SI].emm_handle2,EXCL   ;disable physical page
 scanmem7:       ADD     SI,SIZE phys_page_struct ;go to next table entry
                 MOV     AX,[SI].phys_seg_addr   ;get page segment
                 JMP     scanmem1                ;loop back
@@ -3275,15 +3275,15 @@ scanmem         ENDP
 ;--------------------------------------------------------------------
 ckifram         PROC NEAR
                 PUSH    AX BX
-                MOV     AX,55AAh                ;write to first word
-                XCHG    AX,ES:0
-                MOV     BX,0AA55h
-                XCHG    BX,ES:2
-                CMP     ES:0,55AAh
-                MOV     ES:0,AX
-                JNZ     ckifret
-                CMP     ES:2,0AA55h
-ckifret:        MOV     ES:2,BX
+                MOV     AX,55AAh        ;swap 55AAh with
+                XCHG    AX,ES:0         ; first word of segment
+                MOV     BX,0AA55h       ;swap AA55h with
+                XCHG    BX,ES:2         ; second word of segment
+                CMP     ES:0,55AAh      ;first word swap ok?
+                MOV     ES:0,AX         ;restore first word value
+                JNZ     ckifret         ;no swap, segment not writable
+                CMP     ES:2,0AA55h     ;second word swap ok?
+ckifret:        MOV     ES:2,BX         ;restore second word
                 POP     BX AX
                 RET
 ckifram         ENDP
