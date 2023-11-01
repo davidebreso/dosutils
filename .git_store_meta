@@ -3,7 +3,6 @@
 M
 .git_store_meta
 .gitignore	f	2022-11-20T19:00:06Z
-D
 LICENSE	f	2023-10-01T07:07:19Z
 eatumbs/Makefile	f	2022-11-13T23:10:11Z
 eatumbs/eatumbs.c	f	2022-11-13T23:34:26Z
@@ -24,10 +23,9 @@ pcs86/wdemm.asm	f	2023-10-29T19:46:41Z
 pcs86/wdemm.exe	f	2023-10-29T19:46:42Z
 pcs86/wdemm.inc	f	2023-10-29T19:46:41Z
 pcs86/wdemm.mac	f	2023-10-29T19:46:42Z
-prn2file/makefile	f	2023-11-01T13:53:38Z
+prn2file/makefile	f	2023-11-01T14:28:09Z
 prn2file/prn2file.asm
-prn2file/prn2file.com
-prn2file/prn2file.doc	f	2023-11-01T13:53:38Z
+prn2file/prn2file.doc	f	2023-11-01T14:28:09Z
 prn2file/prn2file.exe
 readme.md	f	2023-08-03T22:14:05Z
 rtl2umb/Makefile	f	2022-11-21T19:52:16Z
