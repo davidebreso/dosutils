@@ -1,0 +1,112 @@
+PRN2FILE 
+Command 
+ 
+Tom Kihlken     1987/No. 22 (Utilities) 
+****************************************************************************** 
+** Modified Feb 11, 1992, by John Durso.  Note, I added the
+following Modifications made by Mel Brown to the original PRN2FILE
+(1987 version 1.0) program in 1989 to the new PRN2FILE (1991
+version 1.1)
+
+* Modified May, 1989, by Mel Brown.  See the Addendum on page 2 of this *
+document.  Added a sound as a reminder to the user that printer traffic is *
+being redirected to a disk file by this program.  Also corrected several   *
+logic errors in the original version of the program.  Many thanks to   *
+Christopher L. Morgan, author of "Bluebook Of Assembly Routines For The IBM   *
+PC & XT", for the sound routines used in this program.
+****************************************************************************** 
+ 
+Purpose:  Captures any output nominally directed to a printer to a file 
+          that can then be edited by a word processor or printed later. 
+ 
+Format:   PRN2FILE [d:][path]filename [/Pn] [/Bn] [/U] 
+ 
+Remarks: 
+ 
+     PRN2FILE is a memory resident program that is normally loaded as part 
+of your AUTOEXEC.BAT file.  It should be installed before other print 
+utilities, such as a print spooler or the DOS MODE command.  Once installed, 
+the program may be run multiple times to change the filename (the drive and 
+path default to the current directory unless specified) designated to receive 
+the printer output. 
+ 
+     Unless the filename is changed, successive print operations are 
+appended to (rather than overwrite) the created file.  To disable the printer 
+output redirection, simply omit to specify a filename. 
+ 
+     The optional /Pn parameter designates the printer number (the default 
+is LPT1) to be redirected.  Note that output to a non-existent printer (/P2 
+in a one-printer system) is supported.  This is another way to permit normal 
+printing while PRN2FILE remains resident.  Legal values for Pn range from 1 
+through 3. 
+ 
+     The optional /Bn parameter sets the buffer size.  The default value is 
+4096 bytes, and values up to 64K may be specified.  The buffer repeatedly 
+empties when partially full in order to minimize the chance of buffer 
+overflow even when DOS may be called on for other activities than writing the 
+buffer to disk.  Should buffer overflow occur an error message is produced, 
+but some data will be lost, so the file should be re-written using a larger 
+buffer. 
+ 
+     The optional /U parameter is used to unload PRN2FILE from memory.  If 
+other memory-resident utilities have been loaded after PRN2FILE and have 
+chained onto the same interrupts, it will not be possible to unload the  
+program, and a message to this effect will be displayed. 
+ 
+     All optional parameters may be entered in any order, but must each be 
+separated by a single space character that acts as a delimiter. 
+ 
+PRN2FILE                           Page 2
+****************************************************************************** 
+                                   ADDENDUM 
+     Modifications to PRN2FILE by Mel Brown, May, 1989. 
+ 
+     I use PRN2FILE frequently, and have shared it with many others.  It's easy
+to forget that this ever-so-useful routine is running in the  background. 
+Occasionally, this leads to some confusion when I want to send a file to the
+'real' printer.  So, I have modified the original version of PRN2FILE to sound
+a reminder that it is in use.  When PRN2FILE receives printer data, and five or
+more seconds have elapsed since the last data was received, it will produce a
+short double beep sound.   
+
+     With this modification, the next time you crank up your word processor
+with PRN2FILE active, you won't be puzzled as to why your printer won't work.
+PRN2FILE will now remind you with a short sound that it is gobbling up your
+printer output and redirecting it to a disk file.   
+ 
+     You can modify the sound characteristics either in the .ASM file, or
+directly in the .COM file.  In the .ASM file, look for these labels: 
+     FREQ1     (pitch of first sound, preset to 0400 Hz) 
+     FREQ2     (pitch of second sound, preset to 1300 Hz) 
+     LGTH1     (duration of first sound, preset to 40 milliseconds) 
+     LGTH2     (duration of delay between sounds, preset to 40 milliseconds) 
+     LGTH3     (duration of second sound, preset to 90 milliseconds) 
+ 
+Modify any of those decimal values to suit your taste, then use the following
+procedure to create the modified .COM file: 
+     masm prn2file; 
+     link prn2file; 
+     exe2bin prn2file prn2file.com 
+     del prn2file.exe 
+     del prn2file.obj 
+ 
+ 
+CAUTION!  Unless you are fluent with the hexadecimal numbering
+          system, and are totally comfortable with DEBUG, don't
+          attempt the following procedure, especially on your only
+          copy of PRN2FILE.  Experiment on a work copy only. 
+ 
+     In order to modify the .COM file directly, enter 'DEBUG PRN2FILE.COM'.  To
+examine the data elements in the order listed above, enter 'D 200 209'.  You
+will see ten bytes (five words) of data.  They are shown in hexadecimal, and
+the two bytes of each word are reversed left to right.  You must keep that in
+mind if you want to modify the numbers to produce a different sound.  Once you
+decide on the new values, use the DEBUG command 'E 20x hh hh' to change the
+data, where 'x' is the appropriate address, and 'hh hh' is the hexadecimal data
+you want to enter.  When finished, enter 'W', then 'Q' to write the updated
+file and quit to DOS.  Finally, deinstall PRN2FILE and reinstall it to effect
+your changes.   
+ 
+     To test your modifications, just 'print' a short file.  You will hear the
+new sound immediately.  To test it again, wait at least five seconds, then
+'print' the file again.   
