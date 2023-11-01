@@ -902,7 +902,13 @@ CHECK_SEG       ENDP
 ;----------------------------------------------------------------------
 COPYRIGHT       DB      " PRN2FILE 1.2 (c) 2023 Davide Bresolin.",0DH,0AH
                 DB      "Original work (c) 1987 Ziff Communications Co.",0DH,0AH
-                DB      "Modifications (c) 1991 Automated Answers$"
+                DB      "Changes (c) 1989 Mel Brown, (c) 1991 Automated Answers, "
+                DB      "(c) 1992 John Durso.$",1AH
+PROGRAMMERS     DB      "Tom Kihlken"
+                DB      "Mel Brown"
+                DB      "Russell Cummings"
+                DB      "John Durso"
+                DB      "Davide Bresolin"
 REDIRECT_MESS   DB      "LPT"
 PRN_NUM         DB      "1 Redirected to: $"
 BAD_FILENAME    DB      "Invalid filename.$"
