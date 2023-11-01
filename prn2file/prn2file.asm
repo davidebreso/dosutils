@@ -518,11 +518,10 @@ INITIALIZE:
 NOT_INSTALLED:
         mov     es,PSP_SEG       ;Set ES to PSP segment
         CMP     BYTE PTR ES:[0080H],0 ;Anything entered?
-        JNE     PARSE           ;Yes, parse command line
-        JMP     NO_PARAMS       ;If not, take jump
+        JE      NO_PARAMS        ;If not, take jump
+        CALL    LOAD_PARAMS
 PARSE:
         MOV     AL,"/"          ;Look for a slash
-        CALL    LOAD_PARAMS
         REPNE   SCASB           ;Scan for slashes
         JCXZ    ALMOST_PARSE    ;Quit when no more slashes
         MOV     AL,ES:[DI]      ;Get the parameter
@@ -541,6 +540,16 @@ PARSE:
 INVALID_PARAM:
         MOV     DX,OFFSET BAD_PARAM ;Point to error message
         JMP     ERR_EXIT
+NO_PARAMS:
+        MOV     DX,OFFSET REDIRECT_MESS ;Point to message
+        MOV     AH,9            ;Display the string of text
+        INT     21H             ;Using DOS display function
+        MOV     DX,OFFSET PRN_TXT ;Point to "PRN"
+        CALL    STRING_CRLF     ;Display the string
+        MOV     AL,0            ;Turn off redirection switch
+        JMP     CHECK_FOR_INSTALL
+ALMOST_PARSE:
+        JMP     PARSE_DONE
 SLASH_U:
         JMP     UNINSTALL       ;Slash "u" means uninstall it
 SLASH_B:
@@ -579,16 +588,6 @@ SLASH_A:
         MOV     AL,1            ;Set append file flag
         MOV     APPEND_FILE,AL  ;Put it in the message area
         JMP     PARSE           ;Look for more parameters
-ALMOST_PARSE:
-        JMP     PARSE_DONE
-NO_PARAMS:
-        MOV     DX,OFFSET REDIRECT_MESS ;Point to message
-        MOV     AH,9            ;Display the string of text
-        INT     21H             ;Using DOS display function
-        MOV     DX,OFFSET PRN_TXT ;Point to "PRN"
-        CALL    STRING_CRLF     ;Display the string
-        MOV     AL,0            ;Turn off redirection switch
-        JMP     CHECK_FOR_INSTALL
 PARSE_DONE:
         CMP     BUFF_SIZE,1     ;Buff must be at least 1K
         JB      INVALID_PARAM   ;If not, exit with error
@@ -604,50 +603,44 @@ PARSE_DONE:
         DEC     DI              ;Now DI points to first letter
         MOV     AL,ES:[DI]      ;Get drive letter in AL
         MOV     WORD PTR ES:[DI],2020H  ;Erase the drive and colon
+        ADD     DI,2            ;Now DI points to first char of path
         JMP     STORE_DRIVE
 GET_DEF_DRIVE:
         MOV     AH,19H          ;Get default drive
         INT     21H
         ADD     AL,65           ;Convert integer drive to ascii
+        dec     di              ;Now DI points to first char of path
 STORE_DRIVE:
         MOV     AH,":"          ;AL has drive, AH has colon
         MOV     WORD PTR FILENAME,AX ;Store drive and colon
         MOV     AL," "          ;Look for spaces
-        CALL    LOAD_PARAMS
-        REPE    SCASB           ;Skip trailing spaces
         MOV     AL,"\"          ;Look for a backslash
         MOV     FILENAME+2,AL   ;Add a backslash to filename
-        dec     di              ;This is first letter of path
+        MOV     SI,OFFSET FILENAME+3 ;Preload location to store path
         scasb                   ;Check for backslash
-        JnZ     GET_DEF_PATH    ;If not '\', use current path
-        MOV     DI,OFFSET FILENAME+2 ;Location to store path
-        JMP     STORE_PATH
-GET_DEF_PATH:
+        JZ      STORE_PATH      ;If '\', save absolute path
+        dec     di              ;DI is first char of path
         MOV     DL,FILENAME     ;Selected drive letter
         AND     DL,11011111B    ;Convert it to upper case
         SUB     DL,64           ;Convert it to integer
         MOV     SI,OFFSET FILENAME + 3 ;Put current path at SI
-        MOV     DI,SI           ;Save this for search later
         MOV     AH,47H          ;DOS get current directory
         INT     21H
         JC      BAD_NAME_EXIT   ;Exit if invalid drive
         MOV     AL,0            ;Look for end of path
-        CMP     [DI],AL         ;Was there any path?
+        CMP     [SI],AL         ;Was there any path?
         JE      STORE_PATH      ;If not, don't scan it
         push    ds              ;Set ES=DS
         pop     es
+        xchg    di, si          ;Swap SI and DI
         MOV     CX,64           ;Maximum number of bytes in path
         REPNE   SCASB           ;Scan for end of path string
         MOV     BYTE PTR [DI-1],"\"  ;Add the trailing backslash
         mov     es,PSP_SEG      ;Restore ES=PSP
+        xchg    di, si          ;Restore DI and SI
 STORE_PATH:
-        PUSH    DI              ;Save location to append path
-        MOV     AL," "          ;Look for blank spaces
-        CALL    LOAD_PARAMS
-        REPE    SCASB           ;Scan for non-blank character
-        MOV     SI,DI
-        DEC     SI              ;This is first letter of path
-        POP     DI              ;Get back location to append
+        xchg    di, si          ;DI=location in FILENAME
+                                ; SI=location in command line
         mov     ax, ds          ;Set ES=Data segment
         mov     es, ax
         mov     ds, PSP_SEG     ;Set DS=PSP
@@ -878,7 +871,6 @@ UNINSTALL:
         JC      RELEASE_ERR     ;If error, take jump
 
         MOV     ES,INSTALLED_SEG;The resident program segment
-;;        NOT     WORD PTR ES:START   ;Mark segment as uninstalled
         MOV     ES,ES:PSP_SEG   ;Get segment of memory block
         MOV     AH,49H          ;Free its allocated memory
         INT     21H

@@ -24,7 +24,7 @@ pcs86/wdemm.exe	f	2023-10-29T19:46:42Z
 pcs86/wdemm.inc	f	2023-10-29T19:46:41Z
 pcs86/wdemm.mac	f	2023-10-29T19:46:42Z
 prn2file/makefile
-prn2file/prn2file.asm	f	2023-11-01T15:47:27Z
+prn2file/prn2file.asm
 prn2file/prn2file.doc	f	2023-11-01T15:47:28Z
 prn2file/prn2file.exe
 readme.md	f	2023-08-03T22:14:05Z

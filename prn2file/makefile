@@ -1,10 +1,15 @@
 all:    prn2file.exe
 
+!ifdef EBUG
+LDFLAGS=/v
+ASFLAGS=/zi
+!endif
+
 prn2file.exe: prn2file.obj
-        tlink prn2file
+        tlink $(LDFLAGS) prn2file
 
 prn2file.obj: prn2file.asm
-        tasm prn2file
+        tasm $(ASFLAGS) prn2file
 
 clean:
         @del *.obj
