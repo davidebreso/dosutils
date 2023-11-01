@@ -20,20 +20,7 @@
 ;----------------------------------------------------------------------
 ; Data area used by this program
 ;----------------------------------------------------------------------
-START           LABEL   WORD             ; Initial marker
-COPYRIGHT       DB      " PRN2FILE 1.2 (c) 2023 Davide Bresolin.",0DH,0AH
-                DB      "Original work (c) 1987 Ziff Communications Co.",0DH,0AH
-		        DB      "Modifications (c) 1991 Automated Answers$",1AH
-PROGRAMMERS     DB      "Tom Kihlken"
-		        DB      "Russell Cummings"
-REDIRECT_MESS   DB      "LPT"
-PRN_NUM         DB      "1 Redirected to: $"
-BAD_FILENAME    DB      "Invalid filename.$"
-BAD_PARAM       DB      "Usage: PRN2FILE [path][filename][/Pn][/Bnn][/F][/A][/U]$"
-BAD_ALLOC       DB      "Memory Allocation Error.$"
-BAD_UNINSTALL   DB      "Cannot Uninstall.$"
-PRN_TXT         DB      "PRN$"
-CRLF            DB      13,10,"$"
+START           DB      "PRN2FILE"            ; Initial marker
 ERR_MESSAGE     DB      13,10,"*Buffer Overflow*",13,10
 MESS_LENGTH     EQU     $ - OFFSET ERR_MESSAGE
 freq1           dw      400     ;Frequency of first sound
@@ -59,6 +46,7 @@ BUFF_POINTER    DW      0       ;Pointer to next space in buffer
 BUFF_SIZE       DW      4       ;Size of buffer
 BUFF_SEGMENT    DW      0       ;Segment address of buffer
 TIME_TO_WRITE   EQU     400H    ;Flush buffer when this full
+FILENAME        DB      128 DUP(0)  ;File name will go here
 
 ;-----------------------------------------------------------------------
 ; Interrupt 17 routine. (BIOS printer output)
@@ -482,6 +470,7 @@ DO_NOTHING:
 
 NEWINT28        ENDP
 
+END_OF_CODE     LABEL   BYTE    ; Marks end of resident code block
 ;----------------------------------------------------------------------
 ; Here is the code used to initialize prn2file.com.  First determine
 ; if prn2file is already installed.  If it is, just copy new parameters
@@ -914,7 +903,18 @@ CHECK_SEG       PROC    NEAR
 
 CHECK_SEG       ENDP
 ;----------------------------------------------------------------------
-FILENAME        LABEL   BYTE            ;File name will go here
-END_OF_CODE     =       $ + 128         ;Allow 128 bytes for it
+; Transient data
+;----------------------------------------------------------------------
+COPYRIGHT       DB      " PRN2FILE 1.2 (c) 2023 Davide Bresolin.",0DH,0AH
+                DB      "Original work (c) 1987 Ziff Communications Co.",0DH,0AH
+		        DB      "Modifications (c) 1991 Automated Answers$"
+REDIRECT_MESS   DB      "LPT"
+PRN_NUM         DB      "1 Redirected to: $"
+BAD_FILENAME    DB      "Invalid filename.$"
+BAD_PARAM       DB      "Usage: PRN2FILE [path][filename][/Pn][/Bnn][/F][/A][/U]$"
+BAD_ALLOC       DB      "Memory Allocation Error.$"
+BAD_UNINSTALL   DB      "Cannot Uninstall.$"
+PRN_TXT         DB      "PRN$"
+CRLF            DB      13,10,"$"
 
 end    Initialize
