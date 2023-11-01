@@ -10,19 +10,22 @@
 ;  6)  Use /A to append to file (default is to create new file)
 ;  7)  Use /U to uninstall the program
 ;----------------------------------------------------------------------
-CSEG            SEGMENT
-		ASSUME  CS:CSEG,DS:NOTHING
+.8086 ; cpu type
+.model small
+.stack 200h        ; Open Watcom linker requires a minimum stack of 512 bytes
 
-		ORG     100H    ;Beginning for .COM programs
-START:          JMP INITIALIZE  ;Initialization code is at end
+.code
+		ASSUME  CS:@code,DS:NOTHING
 
 ;----------------------------------------------------------------------
 ; Data area used by this program
 ;----------------------------------------------------------------------
-COPYRIGHT       DB      " PRN2FILE 1.1 (c) 1987 Ziff Communications Co.",0DH,0AH
-		DB      "Modifications (c) 1991 Automated Answers$",1AH
+START           LABEL   WORD             ; Initial marker
+COPYRIGHT       DB      " PRN2FILE 1.2 (c) 2023 Davide Bresolin.",0DH,0AH
+                DB      "Original work (c) 1987 Ziff Communications Co.",0DH,0AH
+		        DB      "Modifications (c) 1991 Automated Answers$",1AH
 PROGRAMMERS     DB      "Tom Kihlken"
-		DB      "Russell Cummings"
+		        DB      "Russell Cummings"
 REDIRECT_MESS   DB      "LPT"
 PRN_NUM         DB      "1 Redirected to: $"
 BAD_FILENAME    DB      "Invalid filename.$"
@@ -48,6 +51,7 @@ JUST_FILE       DB      0       ;Just file flag
 APPEND_FILE     DB      0       ;Append file flag
 SWITCH          DB      0       ;On/off switch for redirecting printer
 TIMEOUT         DW      0       ;Holds timeout counter to flush buffer
+PSP_SEG         DW      0       ;PSP segment saved here
 INSTALLED_SEG   DW      0       ;Segment location of installed copy
 WRITE_FLAG      DB      0       ;Indicates buffer should be written
 PRINTER_NUM     DW      0       ;Default to first parallel printer
@@ -138,8 +142,8 @@ PRINT_RET:
 
                 CMP  CS:JUST_FILE,1     ;Just file turned on?
                 JE   NO_POPS            ;If on, take jump
-		
-		POP AX                
+
+		POP AX
 		POP BX
 		POP CX
 		POP DX
@@ -149,8 +153,8 @@ PRINT_RET:
 		POP ES                  ;Restore registers and
 
 		JMP CS:OLDINT17         ;print onto printer
-NO_POPS:  
-                IRET                    ;Return from interrupt        
+NO_POPS:
+                IRET                    ;Return from interrupt
 NEWINT17        ENDP                    ;Without going to printer
 
 ;----------------------------------------------------------------------
@@ -256,7 +260,7 @@ WRITE_TO_FILE   PROC    NEAR
 
 		PUSH    CS
 		POP     DS              ;Set DS to code segment
-		ASSUME  DS:CSEG         ;Tell assembler DS is CSEG
+		ASSUME  DS:@code         ;Tell assembler DS is @code
 		MOV     WRITE_FLAG,0    ;Clear write request flag
 		MOV     AX,3524H        ;Get dos critical error vector
 		CALL    DOS_FUNCTION    ;Do the dos function
@@ -378,7 +382,7 @@ freq            proc    near
 freq            endp
 
 ;----------------------------------------------------------------------
-;Set the sound frequency into the timer 
+;Set the sound frequency into the timer
 ;----------------------------------------------------------------------
 toneset         proc    near
                 mov     al,cl           ;Send lower byte
@@ -485,8 +489,13 @@ NEWINT28        ENDP
 ; and replace with new ones.  The output buffer will later overlay
 ; this code to conserve memory.
 ;----------------------------------------------------------------------
-		ASSUME  CS:CSEG, DS:CSEG, ES:NOTHING
+		ASSUME  CS:@code, DS:NOTHING, ES:NOTHING
 INITIALIZE:
+        push    ds              ; Save PSP segment into stack
+        mov     ax, @code       ; Initialize DS to address
+        mov     ds, ax          ;  of code segment
+        pop     PSP_SEG         ; Save PSP segment for later
+        ASSUME  DS:@code
 		MOV     DX,OFFSET COPYRIGHT
 		CALL    STRING_CRLF     ;Display the string
 
@@ -515,18 +524,17 @@ NEXT_SEGMENT:
 		MOV     PRN_NUM,DL      ;Put it into the message area
 NOT_INSTALLED:
 		MOV     INSTALLED_SEG,ES
-		PUSH    CS
-		POP     ES              ;Set ES to this segment
-		ASSUME  ES:CSEG
-		CMP     BYTE PTR DS:[0080],0 ;Anything entered?
-		JE      NO_PARAMS       ;If not, take jump
+		mov     es,PSP_SEG       ;Set ES to PSP segment
+		CMP     BYTE PTR ES:[0080H],0 ;Anything entered?
+		JNE     PARSE           ;Yes, parse command line
+        JMP     NO_PARAMS       ;If not, take jump
 PARSE:
 		MOV     AL,"/"          ;Look for a slash
 		CALL    LOAD_PARAMS
 		REPNE   SCASB           ;Scan for slashes
 		JCXZ    ALMOST_PARSE    ;Quit when no more slashes
-		MOV     AL,[DI]         ;Get the parameter
-		MOV WORD PTR [DI-1],2020H;Erase the slash and letter
+		MOV     AL,ES:[DI]      ;Get the parameter
+		MOV WORD PTR ES:[DI-1],2020H    ;Erase the slash and letter
 		OR      AL,32           ;Convert to lower case
 		CMP     AL,"p"          ;Is it the "p" parameter
 		JE      SLASH_P
@@ -550,20 +558,20 @@ NEXT_DIGIT:
 		MOV     BL,10
 		MUL     BL              ;Times 10 for next digit
 		INC     DI              ;Point to next digit
-		MOV     BL,[DI]         ;And get the next one
+		MOV     BL,ES:[DI]      ;And get the next one
 		SUB     BL,30H          ;Convert it to binary
 		JC      PARSE           ;If not a digit, keep parsing
 		CMP     BL,9
 		JA      PARSE           ;If not a digit, keep parsing
-		MOV     BYTE PTR [DI]," ";Erase character from command
+		MOV     BYTE PTR ES:[DI]," "    ;Erase character from command
 		XOR     BH,BH
 		ADD     AX,BX           ;Add in this digit
 		MOV     BUFF_SIZE,AX    ;And save the new total
 		JMP     NEXT_DIGIT
 SLASH_P:
 		INC     DI              ;Point to the printer number
-		MOV     AL,[DI]
-		MOV     BYTE PTR [DI]," ";Erase this char from command
+		MOV     AL,ES:[DI]
+		MOV     BYTE PTR ES:[DI]," "    ;Erase this char from command
 		MOV     PRN_NUM,AL      ;Put it in the message area
 		SUB     AL,31H          ;Convert it to printer number
 		XOR     AH,AH           ;Make it a word
@@ -572,15 +580,15 @@ SLASH_P:
 		MOV     PRINTER_NUM,AX  ;Store the parameter
 		JMP     PARSE           ;Look for more parameters
 SLASH_F:
-	        MOV     AL,1            ;Set just file flag
-	        MOV     JUST_FILE,AL    ;Put it in the message area
+	    MOV     AL,1            ;Set just file flag
+	    MOV     JUST_FILE,AL    ;Put it in the message area
 		JMP     PARSE           ;Look for more parameters
 SLASH_A:
-	        MOV     AL,1            ;Set append file flag
-	        MOV     APPEND_FILE,AL  ;Put it in the message area
+	    MOV     AL,1            ;Set append file flag
+	    MOV     APPEND_FILE,AL  ;Put it in the message area
 		JMP     PARSE           ;Look for more parameters
 ALMOST_PARSE:
-                JMP     PARSE_DONE
+        JMP     PARSE_DONE
 NO_PARAMS:
 		MOV     DX,OFFSET REDIRECT_MESS ;Point to message
 		MOV     AH,9            ;Display the string of text
@@ -597,13 +605,13 @@ PARSE_DONE:
 		MOV     AL," "          ;Look for spaces
 		CALL    LOAD_PARAMS
 		REPE    SCASB           ;Scan for non-space character
-                JZ      NO_PARAMS       ;Any letters found?
+        JZ      NO_PARAMS       ;Any letters found?
 
-		CMP     BYTE PTR [DI],":" ;Was a drive specified?
+		CMP     BYTE PTR ES:[DI],":"    ;Was a drive specified?
 		JNE     GET_DEF_DRIVE   ;If not, get the default drive
 		DEC     DI              ;Now DI points to first letter
-		MOV     AL,[DI]         ;Get drive letter in AL
-		MOV     WORD PTR [DI],2020H;Erase the drive and colon
+		MOV     AL,ES:[DI]      ;Get drive letter in AL
+		MOV     WORD PTR ES:[DI],2020H  ;Erase the drive and colon
 		JMP     STORE_DRIVE
 GET_DEF_DRIVE:
 		MOV     AH,19H          ;Get default drive
@@ -612,11 +620,14 @@ GET_DEF_DRIVE:
 STORE_DRIVE:
 		MOV     AH,":"          ;AL has drive, AH has colon
 		MOV     WORD PTR FILENAME,AX ;Store drive and colon
+		MOV     AL," "          ;Look for spaces
+		CALL    LOAD_PARAMS
+		REPE    SCASB           ;Skip trailing spaces
 		MOV     AL,"\"          ;Look for a backslash
 		MOV     FILENAME+2,AL   ;Add a backslash to filename
-		CALL    LOAD_PARAMS
-		REPNE   SCASB           ;Scan for a backslash
-                JnZ     GET_DEF_PATH    ;If no path, use current path
+        dec     di              ;This is first letter of path
+		scasb                   ;Check for backslash
+        JnZ     GET_DEF_PATH    ;If not '\', use current path
 		MOV     DI,OFFSET FILENAME+2 ;Location to store path
 		JMP     STORE_PATH
 GET_DEF_PATH:
@@ -631,9 +642,12 @@ GET_DEF_PATH:
 		MOV     AL,0            ;Look for end of path
 		CMP     [DI],AL         ;Was there any path?
 		JE      STORE_PATH      ;If not, don't scan it
+        push    ds              ;Set ES=DS
+        pop     es
 		MOV     CX,64           ;Maximum number of bytes in path
 		REPNE   SCASB           ;Scan for end of path string
-		MOV     BYTE PTR [DI-1],"\" ;Add the trailing backslash
+		MOV     BYTE PTR [DI-1],"\"  ;Add the trailing backslash
+        mov     es,PSP_SEG      ;Restore ES=PSP
 STORE_PATH:
 		PUSH    DI              ;Save location to append path
 		MOV     AL," "          ;Look for blank spaces
@@ -642,6 +656,9 @@ STORE_PATH:
 		MOV     SI,DI
 		DEC     SI              ;This is first letter of path
 		POP     DI              ;Get back location to append
+        mov     ax, ds          ;Set ES=Data segment
+        mov     es, ax
+        mov     ds, PSP_SEG     ;Set DS=PSP
 COPY_PATH:
 		LODSB                   ;Get next char of path
 		CMP     AL," "          ;Is it a blank?
@@ -651,6 +668,9 @@ COPY_PATH:
 		STOSB                   ;Store this letter
 		JMP     COPY_PATH       ;Copy until end of path found
 VERIFY_NAME:
+        mov     ax, es          ;Set DS to data segment
+        mov     ds, ax
+        mov     es, PSP_SEG     ;Set ES=PSP
 		PUSH    DI              ;Save end of string location
 		MOV     BYTE PTR [DI],"$" ;Mark eos for dos display
 		MOV     DX,OFFSET REDIRECT_MESS ;Point to message
@@ -662,8 +682,8 @@ VERIFY_NAME:
 		MOV     BYTE PTR [DI],0 ;Now make it an ascii string
 		MOV     DX,OFFSET FILENAME ;Dx points to the filename
 
-                CMP  CS:APPEND_FILE,1   ;Append file turned on?
-                JNE  OPEN_ERR           ;If not, take jump
+        CMP  CS:APPEND_FILE,1   ;Append file turned on?
+        JNE  OPEN_ERR           ;If not, take jump
 
 		MOV     AX,3D00H        ;Open this file for reading
 		INT     21H
@@ -682,7 +702,8 @@ BAD_NAME_EXIT:
 		MOV     DX,OFFSET BAD_FILENAME
 ERR_EXIT:
 		CALL    STRING_CRLF     ;Display the string
-		INT     20H             ;Just exit to dos
+        mov     ax, 04C00h      ;Just exit to dos
+		INT     21H
 FILENAME_OK:
 		MOV     ES,INSTALLED_SEG;Point to installed program
 		PUSH    DS:PRINTER_NUM  ;This moves the new printer
@@ -698,8 +719,8 @@ CHECK_FOR_INSTALL:
 		MOV     ES,INSTALLED_SEG
 		MOV     ES:SWITCH,AL    ;Store the new on/off switch
 		JE      INSTALL         ;If not installed yet, do it now
-		INT     20H             ;Otherwise terminate
-
+        mov     ax, 04C00h      ;Otherwise terminate
+		INT     21H
 ;----------------------------------------------------------------------
 ; This subroutine displays a string followed by a CR and LF
 ;----------------------------------------------------------------------
@@ -716,11 +737,12 @@ STRING_CRLF     ENDP
 
 ;----------------------------------------------------------------------
 ; This subroutine sets DI to the command line and CX to the byte count
+; Assumes that ES points to PSP segment
 ;----------------------------------------------------------------------
 LOAD_PARAMS     PROC    NEAR
 
 		MOV     DI,80H          ;Point to parameter area
-		MOV     CL,CS:[DI]      ;Get number of chars into CL
+		MOV     CL,ES:[DI]      ;Get number of chars into CL
 		XOR     CH,CH           ;Make it a word
 		INC     DI              ;Point to first character
 		CLD                     ;String search forward
@@ -733,12 +755,13 @@ LOAD_PARAMS     ENDP
 ; interrupt vectors and replacing them with the new ones.
 ; Then allocate memory for the buffer.  Exit and remain resident.
 ;----------------------------------------------------------------------
-		ASSUME  DS:CSEG, ES:CSEG
+		ASSUME  DS:@code, ES:@code
 INSTALL:
 		MOV     BX,OFFSET END_OF_CODE   ;Get end of resident code
-		ADD     BX,15
+        add     bx,256+15       ;Add PSP size and one extra paragraph
 		MOV     CL,4            ;Shift by 4 to divide by 16
 		SHR     BX,CL           ;This converts to paragraphs
+        mov     es, PSP_SEG     ;Set ES to program memory block
 		MOV     AH,4AH          ;Modify memory block
 		INT     21H             ;Dos setblock function call
 		JNC     ALLOCATE_BUFFER ;If it worked ok, then continue
@@ -807,11 +830,12 @@ SIZE_OK:
 ; (TSR). This leaves code and space for buffer resident.
 ;----------------------------------------------------------------------
 
-		MOV     AX,DS:[002CH]   ;Get segment of enviornment
+        mov     es, PSP_SEG     ;Get PSP segment
+		MOV     AX,es:[002CH]   ;Get segment of environment
 		MOV     ES,AX           ;Put it into ES
 		MOV     AH,49H          ;Release allocated memory
 		INT     21H
-		MOV     DX,(OFFSET END_OF_CODE - OFFSET CSEG + 15)SHR 4
+		MOV     DX,(OFFSET END_OF_CODE - OFFSET @code + 256 + 15)SHR 4
 		MOV     AX,3100H
 		INT     21H             ;Terminate and stay resident
 
@@ -819,7 +843,7 @@ SIZE_OK:
 ; This procedure removes PRN2FILE from memory by replacing the vectors
 ; and releasing the memory used for the code and buffer.
 ;----------------------------------------------------------------------
-		ASSUME  DS:CSEG, ES:NOTHING
+		ASSUME  DS:@code, ES:NOTHING
 UNINSTALL:
 		MOV     AL,08H          ;Check the timer interrupt
 		CALL    CHECK_SEG       ;If changed, can't uninstall
@@ -862,7 +886,8 @@ UNINSTALL:
 		JC      RELEASE_ERR     ;If error, take jump
 
 		MOV     ES,INSTALLED_SEG;The resident program segment
-		NOT     WORD PTR ES:START
+		NOT     WORD PTR ES:START   ;Mark segment as uninstalled
+        MOV     ES,ES:PSP_SEG   ;Get segment of memory block
 		MOV     AH,49H          ;Free its allocated memory
 		INT     21H
 		JC      RELEASE_ERR     ;If error, take jump
@@ -892,5 +917,4 @@ CHECK_SEG       ENDP
 FILENAME        LABEL   BYTE            ;File name will go here
 END_OF_CODE     =       $ + 128         ;Allow 128 bytes for it
 
-CSEG            ENDS
-		END     START
+end    Initialize
